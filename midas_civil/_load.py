@@ -436,7 +436,11 @@ class Load:
                     "USE_PROJECTION": i.USE_PROJECTION,
                     "USE_ECCEN": i.USE_ECCEN,
                     "D": i.D,
-                    "P": i.P
+                    "P": i.P,
+                    "USE_ADDITIONAL": False,
+                    "ADDITIONAL_I_END": 0,
+                    "ADDITIONAL_J_END": 0,
+                    "USE_ADDITIONAL_J_END": False
                 }
                 if i.USE_ECCEN == True:
                     item_data.update({
@@ -451,7 +455,7 @@ class Load:
                         "USE_ADDITIONAL": i.USE_H,
                         "ADDITIONAL_I_END": i.I_H,
                         "ADDITIONAL_J_END": i.J_H,
-                        "USE_ADDITIONAL_J_END": i.J_H
+                        "USE_ADDITIONAL_J_END": i.USE_JH
                     })
                 if i.ELEMENT not in json["Assign"]:
                     json["Assign"][i.ELEMENT] = {"ITEMS": []}

@@ -429,6 +429,10 @@ def MidasAPI(method:_httpMethod, command:str, body:dict={})->dict:
             import json as _json
             with open(NX.debug_log_path, "a", encoding="utf-8") as _f:
                 _f.write(f">> {method} {command}\n")
+                if body and method in ("PUT", "POST"):
+                    _f.write("REQUEST:\n")
+                    _f.write(_json.dumps(body, indent=2, ensure_ascii=False))
+                    _f.write("\nRESPONSE:\n")
                 _f.write(_json.dumps(response.json(), indent=2, ensure_ascii=False))
                 _f.write("\n\n")
         else:

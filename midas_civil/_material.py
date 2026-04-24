@@ -101,12 +101,14 @@ class Material:
         Material.delete()
         CreepShrinkage.delete()
         CompStrength.delete()
+        TDMatLink.delete()
 
     @staticmethod
     def clearAll():
         Material.clear()
         CreepShrinkage.clear()
         CompStrength.clear()
+        TDMatLink.clear()
         
 
 
@@ -307,7 +309,7 @@ class CreepShrinkage:
 
             Parameters:
                 name (str): The name for the material property.
-                code_year (int, optional): The year of the IRC code. Can be 2000 or 2011. Defaults to 2011.
+                code_year (int, optional): The year of the IRC code. Can be 2000, 2011, or 2020. Defaults to 2011.
                 fck (float): 28-day characteristic compressive strength. 
                 notional_size (float): The notional size of the member 
                 relative_humidity (float): The relative humidity in percentage (40-99%). 
@@ -317,8 +319,8 @@ class CreepShrinkage:
 
             Examples:
                 ```python
-                # Create a material based on IRC:112-2011
-                CreepShrinkage.IRC("IRC_M30_2011", code_year=2011, fck=30000, notional_size=1, type_cement = "RS", age_shrinkage=7)
+                # Create a material based on IRC:112-2020
+                CreepShrinkage.IRC("IRC_M30_2020", code_year=2020, fck=30000, notional_size=1, type_cement = "RS", age_shrinkage=7)
 
                 # Create a material based on IRC:18-2000
                 CreepShrinkage.IRC("IRC_M25_2000", code_year=2000, fck=25000, notional_size=1, relative_humidity=80, age_shrinkage=3)
@@ -326,7 +328,9 @@ class CreepShrinkage:
             """
             if id == None: id =0
             code_name = ""
-            if code_year == 2011:
+            if code_year == 2020:
+                code_name = "INDIA_IRC_112_2020"
+            elif code_year == 2011:
                 code_name = "INDIA_IRC_112_2011"
             elif code_year == 2000:
                 code_name = "INDIA_IRC_18_2000"
@@ -346,7 +350,7 @@ class CreepShrinkage:
                 "AGE": age_shrinkage,
                 "MSIZE": notional_size
             }
-            if code_year == 2011:
+            if code_year in (2011, 2020):
                 js["CTYPE"] = type_cement
 
             temp = CreepShrinkage(js,id)
@@ -1712,9 +1716,8 @@ class TDMatLink:
         a = TDMatLink.get()
         if a != {'message': ''}:
             if list(a['TMAT'].keys()) != []:
-                TDMatLink.mats = []
-                TDMatLink.ids=[]
+                TDMatLink.mats = {}
                 for j in a['TMAT'].keys():
-                    TDMatLink(a['TMAT'][j], int(j))
+                    TDMatLink(int(j), a['TMAT'][j].get('TDMT_NAME', ''), a['TMAT'][j].get('TDME_NAME', ''))
 
 #-------------------------------------------------------------------------------------------------

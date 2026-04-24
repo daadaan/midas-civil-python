@@ -616,37 +616,37 @@ class MovingLoad:
         # --- Data mapping for Indian (IRS) vehicle codes ---
         _irs_vehicle_map = {
             "BG-1676": {
-                "full_name": "Broad Gauge-1676mm",
+                "full_name": "BroadGauge-1676mm",
                 "vehicles": [
-                    "Modified B.G. Loading 1987-1", "Modified B.G. Loading 1987-2", "B.G. Standard Loading 1926-M.L.",
-                    "B.G. Standard Loading 1926-B.L.", "Revised B.G. Loading 1975-WG1+WG1", "Revised B.G. Loading 1975-WAM4A+WAM4A",
-                    "Revised B.G. Loading 1975-Bo-Bo+Bo-Bo", "Revised B.G. Loading 1975-WAM4A", "Revised B.G. Loading 1975-WAM4A+WAM4",
-                    "Revised B.G. Loading 1975-WAM4A+WDM2", "25t Loading-2008 Combination 1", "25t Loading-2008 Combination 2",
-                    "25t Loading-2008 Combination 3", "25t Loading-2008 Combination 4", "25t Loading-2008 Combination 5",
-                    "DFC Loading Combination 1", "DFC Loading Combination 2", "DFC Loading Combination 3",
-                    "DFC Loading Combination 4", "DFC Loading Combination 5"
+                    "ModifiedB.G.Loading1987-1", "ModifiedB.G.Loading1987-2", "B.G.StandardLoading1926-M.L.",
+                    "B.G.StandardLoading1926-B.L.", "RevisedB.G.Loading1975-WG1+WG1", "RevisedB.G.Loading1975-WAM4A+WAM4A",
+                    "RevisedB.G.Loading1975-Bo-Bo+Bo-Bo", "RevisedB.G.Loading1975-WAM4A", "RevisedB.G.Loading1975-WAM4A+WAM4",
+                    "RevisedB.G.Loading1975-WAM4A+WDM2", "25tLoading-2008Combination1", "25tLoading-2008Combination2",
+                    "25tLoading-2008Combination3", "25tLoading-2008Combination4", "25tLoading-2008Combination5",
+                    "DFCLoadingCombination1", "DFCLoadingCombination2", "DFCLoadingCombination3",
+                    "DFCLoadingCombination4", "DFCLoadingCombination5"
                 ]
             },
             "MG-1000": {
-                "full_name": "Metre Gauge-1000mm",
-                "vehicles": ["2 Co-Co Locomotives", "2 Bo-Bo Locomotives", "MGML Loading of 1929", "M.L.", "B.L.", "C."]
+                "full_name": "MetreGauge-1000mm",
+                "vehicles": ["2Co-CoLocomotives", "2Bo-BoLocomotives", "MGMLLoadingof1929", "M.L.", "B.L.", "C."]
             },
             "NG-762": {
-                "full_name": "Narrow Gauge-762mm",
+                "full_name": "NarrowGauge-762mm",
                 "vehicles": [
-                    "Class H: B-B or Bo-Bo Type", "Class H: C-C or Co-Co Type", "Class H: Steam (Zf/1)", "Class H: Diesel Electric",
-                    "Class A: B-B or Bo-Bo Type", "Class A: C-C or Co-Co Type", "Class A: Diesel Mech./Elec.",
-                    "Class A: Diesel Mech./Elec.(Articulated)", "Class A: DRG No. CSO/C-873", "Class B: B-B or Bo-Bo Type",
-                    "Class B: Steam Engine (Tank)", "Class B: Steam Engine (Tender)", "Class B: Diesel Electric"
+                    "ClassH:B-BorBo-BoType", "ClassH:C-CorCo-CoType", "ClassH:Steam(Zf/1)", "ClassH:DieselElectric",
+                    "ClassA:B-BorBo-BoType", "ClassA:C-CorCo-CoType", "ClassA:DieselMech./Elec.",
+                    "ClassA:DieselMech./Elec.(Articulated)", "ClassA:DRGNo.CSO/C-873", "ClassB:B-BorBo-BoType",
+                    "ClassB:SteamEngine(Tank)", "ClassB:SteamEngine(Tender)", "ClassB:DieselElectric"
                 ]
             },
             "HML": {
-                "full_name": "Heavy Mineral Loadings",
-                "vehicles": [f"Train Formation No.{i}" for i in range(1, 18)]
+                "full_name": "HeavyMineralLoadings",
+                "vehicles": [f"TrainFormationNo.{i}" for i in range(1, 18)]
             },
             "FTB": {
-                "full_name": "Footbridge & Footpath",
-                "vehicles": ["Footbridge & Footpath"]
+                "full_name": "Footbridge&Footpath",
+                "vehicles": ["Footbridge&Footpath"]
             }
         }
         
@@ -657,71 +657,71 @@ class MovingLoad:
             },
             "IRS": {
                 "BG-1676": {
-                    "Modified B.G. Loading 1987-1": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Modified B.G. Loading 1987-2": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "B.G. Standard Loading 1926-M.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "B.G. Standard Loading 1926-B.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-WG1+WG1": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-WAM4A+WAM4A": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-Bo-Bo+Bo-Bo": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-WAM4A": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-WAM4A+WAM4": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Revised B.G. Loading 1975-WAM4A+WDM2": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "25t Loading-2008 Combination 1": {"VEH_IN": {"TRACTIVE": 617.81895, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "25t Loading-2008 Combination 2": {"VEH_IN": {"TRACTIVE": 509.9458, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "25t Loading-2008 Combination 3": {"VEH_IN": {"TRACTIVE": 823.7586, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "25t Loading-2008 Combination 4": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "25t Loading-2008 Combination 5": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "DFC Loading Combination 1": {"VEH_IN": {"TRACTIVE": 617.81895, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "DFC Loading Combination 2": {"VEH_IN": {"TRACTIVE": 509.9458, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "DFC Loading Combination 3": {"VEH_IN": {"TRACTIVE": 823.7586, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "DFC Loading Combination 4": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "DFC Loading Combination 5": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ModifiedB.G.Loading1987-1": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ModifiedB.G.Loading1987-2": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "B.G.StandardLoading1926-M.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "B.G.StandardLoading1926-B.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-WG1+WG1": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-WAM4A+WAM4A": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-Bo-Bo+Bo-Bo": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-WAM4A": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-WAM4A+WAM4": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "RevisedB.G.Loading1975-WAM4A+WDM2": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "25tLoading-2008Combination1": {"VEH_IN": {"TRACTIVE": 617.81895, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "25tLoading-2008Combination2": {"VEH_IN": {"TRACTIVE": 509.9458, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "25tLoading-2008Combination3": {"VEH_IN": {"TRACTIVE": 823.7586, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "25tLoading-2008Combination4": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "25tLoading-2008Combination5": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "DFCLoadingCombination1": {"VEH_IN": {"TRACTIVE": 617.81895, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "DFCLoadingCombination2": {"VEH_IN": {"TRACTIVE": 509.9458, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "DFCLoadingCombination3": {"VEH_IN": {"TRACTIVE": 823.7586, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "DFCLoadingCombination4": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "DFCLoadingCombination5": {"VEH_IN": {"TRACTIVE": 490.3325, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                 },
                 "MG-1000": {
-                    "2 Co-Co Locomotives": {"VEH_IN": {"TRACTIVE": 313.8128, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "2 Bo-Bo Locomotives": {"VEH_IN": {"TRACTIVE": 235.3596, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "MGML Loading of 1929": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "2Co-CoLocomotives": {"VEH_IN": {"TRACTIVE": 313.8128, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "2Bo-BoLocomotives": {"VEH_IN": {"TRACTIVE": 235.3596, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "MGMLLoadingof1929": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                     "M.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                     "B.L.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                     "C.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                 },
                 "NG-762": {
-                    "Class H: B-B or Bo-Bo Type": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class H: C-C or Co-Co Type": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class H: Steam (Zf/1)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class H: Diesel Electric": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class A: B-B or Bo-Bo Type": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class A: C-C or Co-Co Type": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class A: Diesel Mech./Elec.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class A: Diesel Mech./Elec.(Articulated)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class A: DRG No. CSO/C-873": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class B: B-B or Bo-Bo Type": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class B: Steam Engine (Tank)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class B: Steam Engine (Tender)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
-                    "Class B: Diesel Electric": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassH:B-BorBo-BoType": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassH:C-CorCo-CoType": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassH:Steam(Zf/1)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassH:DieselElectric": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassA:B-BorBo-BoType": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassA:C-CorCo-CoType": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassA:DieselMech./Elec.": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassA:DieselMech./Elec.(Articulated)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassA:DRGNo.CSO/C-873": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassB:B-BorBo-BoType": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassB:SteamEngine(Tank)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassB:SteamEngine(Tender)": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
+                    "ClassB:DieselElectric": {"VEH_IN": {"TRACTIVE": 0, "BRAKE_LOCO_RATIO": 25, "BRAKE_TRAIN_RATIO": 13.4}},
                 },
                 "HML": {
-                    "Train Formation No.1": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.2": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.3": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.4": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.5": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.6": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.7": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.8": {"VEH_IN": {"TRACTIVE": 298.61249, "BRAKE_LOCO": 215.7463}},
-                    "Train Formation No.9": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
-                    "Train Formation No.10": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
-                    "Train Formation No.11": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
-                    "Train Formation No.12": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.13": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.14": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.15": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.16": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
-                    "Train Formation No.17": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.1": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.2": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.3": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.4": {"VEH_IN": {"TRACTIVE": 588.399, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.5": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.6": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.7": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.8": {"VEH_IN": {"TRACTIVE": 298.61249, "BRAKE_LOCO": 215.7463}},
+                    "TrainFormationNo.9": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
+                    "TrainFormationNo.10": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
+                    "TrainFormationNo.11": {"VEH_IN": {"TRACTIVE": 397.169325, "BRAKE_LOCO": 114.737805}},
+                    "TrainFormationNo.12": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.13": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.14": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.15": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.16": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
+                    "TrainFormationNo.17": {"VEH_IN": {"TRACTIVE": 441.29925, "BRAKE_LOCO": 245.16625}},
                 },
                 "FTB": {
-                    "Footbridge & Footpath": {"VEH_IN": {"FOOTWAY_WIDTH": 3, "SPAN_LENGTH": 7.5}}
+                    "Footbridge&Footpath": {"VEH_IN": {"FOOTWAY_WIDTH": 3, "SPAN_LENGTH": 7.5}}
                 }
             }
         }
@@ -805,10 +805,16 @@ class MovingLoad:
                     vehicle_name (int, optional): The numeric identifier (1-based) for the vehicle, required for "IRS" code.
                     id (int, optional): A unique ID for the vehicle. Auto-assigned if None.
                 """
-                code_map = {"IRC": "IRC:6-2000", "Footway": "IRC:6-2000", "IRS": "IRS: BRIDGE RULES", "Fatigue": "IRC:6-2014"}
+                code_map = {"IRC": "IRC:6-2000", "Footway": "IRC:6-2000", "IRS": "IRS:BRIDGERULES", "Fatigue": "IRC:6-2014"}
                 full_standard_code = code_map.get(standard_code)
                 if not full_standard_code:
                     raise ValueError(f"Invalid standard_code. Use 'IRC', 'IRS', 'Footway', or 'Fatigue'.")
+
+                # MIDAS API requires IRC vehicle type names without spaces
+                _irc_type_name_map = {
+                    "Class A": "ClassA", "Class B": "ClassB", "Class 70R": "Class70R",
+                    "Class 40R": "Class40R", "Class AA": "ClassAA", "Footway": "Footway",
+                }
 
                 all_params = { "standard_code": full_standard_code }
                 defaults = {}
@@ -816,18 +822,18 @@ class MovingLoad:
                 if standard_code == "IRS":
                     if not vehicle_name:
                         raise ValueError("'vehicle_name' is required for IRS standard code.")
-                    
+
                     irs_map = MovingLoad.Vehicle._irs_vehicle_map
                     if vehicle_type not in irs_map:
                         raise ValueError(f"Invalid IRS vehicle_type '{vehicle_type}'. Choose from {list(irs_map.keys())}")
-                    
+
                     vehicle_info = irs_map[vehicle_type]
                     all_params["vehicle_type_name"] = vehicle_info["full_name"]
-                    
+
                     if not (1 <= vehicle_name <= len(vehicle_info["vehicles"])):
                         raise ValueError(f"Invalid 'vehicle_name' {vehicle_name} for type '{vehicle_type}'. "
                                          f"Must be between 1 and {len(vehicle_info['vehicles'])}.")
-                    
+
                     select_vehicle_name = vehicle_info["vehicles"][vehicle_name - 1]
                     all_params["select_vehicle"] = select_vehicle_name
 
@@ -835,9 +841,9 @@ class MovingLoad:
                     if vehicle_type in MovingLoad.Vehicle._india_defaults_map["IRS"]:
                         if select_vehicle_name in MovingLoad.Vehicle._india_defaults_map["IRS"][vehicle_type]:
                             defaults = MovingLoad.Vehicle._india_defaults_map["IRS"][vehicle_type][select_vehicle_name]
-                
+
                 else: # For IRC, Footway, Fatigue
-                    all_params["vehicle_type_name"] = vehicle_type
+                    all_params["vehicle_type_name"] = _irc_type_name_map.get(vehicle_type, vehicle_type)
                     # Get defaults if any exist for this type
                     if standard_code in MovingLoad.Vehicle._india_defaults_map:
                          if vehicle_type in MovingLoad.Vehicle._india_defaults_map[standard_code]:
@@ -1254,7 +1260,7 @@ class MovingLoad:
                         # --- Switches to select the type of load case ---
                         opt_auto_ll: bool = False,
                         opt_lc_for_permit: bool = False,
-                        
+
                         # --- Common and General Load Parameters ---
                         sub_load_items: list = None,
                         scale_factor: list = None,
@@ -1293,7 +1299,7 @@ class MovingLoad:
                         *** Case 3: Permit Vehicle Format (opt_lc_for_permit=True) ***
                         sub_load_items is not used. Use permit_vehicle_id, ref_lane_id, etc. instead.
 
-                    scale_factor (list, optional): A list of 4 numbers for the Multiple Presence Factor. Defaults to [1, 0.9, 0.8, 0.8].
+                    scale_factor (list, optional): A list of 4 numbers for the Multiple Presence Factor [1-2, 3, 4, >=5 lanes]. Defaults to [1, 0.9, 0.8, 0.8].
                     permit_vehicle_id (int, optional): The ID of the permit vehicle. Required for permit cases.
                     ref_lane_id (int, optional): The reference lane ID. Required for permit cases.
                     eccentricity (float, optional): Eccentricity for the permit vehicle. Required for permit cases.
@@ -1318,9 +1324,9 @@ class MovingLoad:
                 if opt_lc_for_permit:
                     if any(p is None for p in [permit_vehicle_id, ref_lane_id, eccentricity, permit_scale_factor]):
                         raise ValueError("For Permit Vehicle cases, 'permit_vehicle_id', 'ref_lane_id', 'eccentricity', and 'permit_scale_factor' are required.")
-                    
+                    # NUM_LOADED_LANES not used by permit cases — remove from params
+                    params.pop("NUM_LOADED_LANES", None)
                     params.update({
-                        "OPT_AUTO_LL": True,
                         "OPT_LC_FOR_PERMIT_LOAD": True,
                         "PERMIT_VEHICLE": permit_vehicle_id,
                         "REF_LANE": ref_lane_id,
@@ -1331,34 +1337,33 @@ class MovingLoad:
                 elif opt_auto_ll:
                     if sub_load_items is None:
                         raise ValueError("For Auto Live Load cases, 'sub_load_items' is required.")
-                    
-                    carriage_way_width = 2.3 if num_loaded_lanes == 1 else 0
-                    carriage_way_loading = 4.903325 if num_loaded_lanes == 1 else 0
-                    
+
+                    # CARRIAGE_WAY_WIDTH and CARRIAGE_WAY_LOADING are Read Only (MIDAS computes
+                    # them from lane geometry). Send 0 as shown in the schema example.
                     for item_list in sub_load_items:
                         sub_load_dict = {
                             "SCALE_FACTOR": item_list[0],
                             "VEHICLE_CLASS_1": item_list[1],
                             "VEHICLE_CLASS_2": item_list[2],
                             "FOOTWAY": item_list[3],
-                            "CARRIAGE_WAY_WIDTH": carriage_way_width,
-                            "CARRIAGE_WAY_LOADING": carriage_way_loading,
+                            "CARRIAGE_WAY_WIDTH": 0,
+                            "CARRIAGE_WAY_LOADING": 0,
                             "SELECTED_LANES": item_list[4]
                         }
                         if len(item_list) > 5 and item_list[5] is not None:
                             sub_load_dict["SELECTED_FOOTWAY_LANES"] = item_list[5]
                         formatted_sub_loads.append(sub_load_dict)
-                    
+
                     params.update({
                         "OPT_AUTO_LL": True,
                         "OPT_LC_FOR_PERMIT_LOAD": False,
                         "SUB_LOAD_ITEMS": formatted_sub_loads
                     })
-                
+
                 else: # General Load
                     if sub_load_items is None:
                         raise ValueError("For General Load cases, 'sub_load_items' is required.")
-                    
+
                     for item_list in sub_load_items:
                         formatted_sub_loads.append({
                             "SCALE_FACTOR": item_list[0],

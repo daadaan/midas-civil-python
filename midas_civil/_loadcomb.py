@@ -1,7 +1,7 @@
 from ._mapi import MidasAPI
 # from ._model import *
 
-from typing import Literal
+from typing import Literal, Optional, cast
 
 # from ._model import *
 
@@ -21,7 +21,41 @@ class LoadCombination:
             "Composite Steel Girder": "/db/LCOM-STLCOMP",
             "Seismic": "/db/LCOM-SEISMIC"
         }
-    def __init__(self, name, case, classification:_classification = "General", active:_active = "ACTIVE", typ:_type = "Add", id:int = None, desc = ""):
+
+    @staticmethod
+    def _existing_ids(classification):
+        """Return existing MIDAS IDs for a load-combination classification."""
+        endpoint = LoadCombination.com_map.get(classification)
+        if endpoint is None:
+            return set()
+
+        try:
+            res = MidasAPI("GET", endpoint)
+        except Exception:
+            return set()
+
+        if not isinstance(res, dict):
+            return set()
+
+        root_key = endpoint.split("/")[-1].split("-")[-1]
+        body = res.get(root_key, {})
+        if not isinstance(body, dict):
+            return set()
+
+        ids = set()
+        for k in body.keys():
+            try:
+                ids.add(int(k))
+            except (TypeError, ValueError):
+                continue
+        return ids
+
+    @staticmethod
+    def _ids_to_suffix(ids):
+        if not ids:
+            return ""
+        return "/" + ",".join(str(i) for i in sorted(ids))
+    def __init__(self, name, case, classification:_classification = "General", active:_active = "ACTIVE", typ:_type = "Add", id: Optional[int] = None, desc = ""):
         """Name, List of tuple of load cases & factors, classification, active, type. \n
         Sample: LoadCombination('LCB1', [('Dead Load(CS)',1.5), ('Temperature(ST)',0.9)], 'General', 'Active', 'Add')"""
         if id == None: id =0
@@ -112,7 +146,10 @@ class LoadCombination:
         combos = {k:{} for k in LoadCombination.valid[:-1]}
         for i in LoadCombination.valid[:-1]:
             if classification == i or classification == "All":
-                combos[i] = MidasAPI("GET",LoadCombination.com_map.get(i))
+                endpoint = LoadCombination.com_map.get(i)
+                if endpoint is None:
+                    continue
+                combos[i] = MidasAPI("GET", endpoint)
         json = {k:v for k,v in combos.items() if v != {'message':''}}
         return json
     
@@ -125,41 +162,73 @@ class LoadCombination:
             print(f'"{classification}" is not a valid input.  It is changed to "General".')
             classification = "General"
         json = LoadCombination.json(classification)
+        if not json:
+            return
         for i in LoadCombination.valid[:-1]:
             if classification == i or classification == "All":
                 if i in list(json.keys()):
-                    a = list(json[i]['Assign'].keys())
-                    b=""
-                    for j in range(len(a)):
-                        b += str(a[j]) + ","
-                    if b != "": b = "/" + b[:-1]
-                    MidasAPI("DELETE", LoadCombination.com_map.get(i) + b)     #Delete existing combination if any
-                    MidasAPI("PUT", LoadCombination.com_map.get(i), json[i])   #Create new combination
+                    endpoint = LoadCombination.com_map.get(i)
+                    if endpoint is None:
+                        continue
+
+                    requested_ids = set()
+                    for k in json[i]['Assign'].keys():
+                        try:
+                            requested_ids.add(int(k))
+                        except (TypeError, ValueError):
+                            continue
+
+                    existing_ids = LoadCombination._existing_ids(i)
+                    delete_ids = requested_ids.intersection(existing_ids)
+                    delete_suffix = LoadCombination._ids_to_suffix(delete_ids)
+                    if delete_suffix:
+                        MidasAPI("DELETE", endpoint + delete_suffix)
+                    MidasAPI("PUT", endpoint, json[i])   #Create new combination
     
     @classmethod
     def sync(cls, classification = "All"):
         LoadCombination.clear()
         json = LoadCombination.get(classification)
-        if json != {}:
+        if json:
             keys = list(json.keys())
             for i in keys:
-                for k,v in json[i][LoadCombination.com_map.get(i)[4:]].items():
+                endpoint = LoadCombination.com_map.get(i)
+                if endpoint is None:
+                    continue
+                root_key = endpoint[4:]
+                section = json[i].get(root_key, {})
+                for k,v in section.items():
                     c = []
                     for j in range(len(v['vCOMB'])):
                         c.append((v['vCOMB'][j]['LCNAME'] + "("+ v['vCOMB'][j]['ANAL'] + ")", v['vCOMB'][j]['FACTOR']))
-                    LoadCombination(v['NAME'], c, i, v['ACTIVE'], v['iTYPE'], int(k), v['DESC'])
+                    LoadCombination(v['NAME'], c, cast(_classification, i), v['ACTIVE'], v['iTYPE'], int(k), v['DESC'])
     
     @classmethod
     def delete(cls, classification = "All", ids = []):
         json = LoadCombination.json(classification)
-        a = ""
-        for i in range(len(ids)):
-            a += str(ids[i]) + ","
-        a = "/" + a[:-1]
-        if json == {}: 
+        if not json:
             print("No load combinations are defined to delete.")
+            return
+
+        requested_ids = set()
+        for i in ids:
+            try:
+                requested_ids.add(int(i))
+            except (TypeError, ValueError):
+                continue
+
+        if not requested_ids:
+            return
+
         for i in list(json.keys()):
-            MidasAPI("DELETE",LoadCombination.com_map.get(i) + a)
+            endpoint = LoadCombination.com_map.get(i)
+            if endpoint is None:
+                continue
+            existing_ids = LoadCombination._existing_ids(i)
+            delete_ids = requested_ids.intersection(existing_ids)
+            delete_suffix = LoadCombination._ids_to_suffix(delete_ids)
+            if delete_suffix:
+                MidasAPI("DELETE", endpoint + delete_suffix)
 
     @classmethod
     def clear(cls):
