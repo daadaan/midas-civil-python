@@ -109,7 +109,7 @@ class Load_Case:
     def sync():
         Load_Case.clear()
         a = Load_Case.get()
-        if a != {'message': ''}:
+        if a != {'message': ''} and 'STLD' in a:
             if list(a['STLD'].keys()) != []:
                 for j in a['STLD'].keys():
                     lc = Load_Case(a['STLD'][j]['TYPE'], a['STLD'][j]['NAME'])
@@ -483,7 +483,7 @@ class Load:
         def sync(cls):
             cls.data = []
             a = cls.get()
-            if a != {'message': ''}:
+            if a != {'message': ''} and 'BMLD' in a:
                 for i in a['BMLD'].keys():
                     for j in range(len(a['BMLD'][i]['ITEMS'])):
                         if a['BMLD'][i]['ITEMS'][j]['USE_ECCEN'] == True and a['BMLD'][i]['ITEMS'][j]['USE_ADDITIONAL'] == True:
