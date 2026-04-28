@@ -147,7 +147,8 @@ class Load:
         if cls.FloorLoadDefine.data : cls.FloorLoadDefine.create()
         if cls.FloorLoadAssign.data : cls.FloorLoadAssign.create()
         if cls.Misc.PreCompositeSection.loadCases : cls.Misc.PreCompositeSection.create()
-    
+        if cls.LoadToMass.data: cls.LoadToMass.create()
+
     @classmethod
     def clear(cls):
         Load_Case.clear()
@@ -158,6 +159,7 @@ class Load:
         cls.FloorLoadAssign.clear()
         cls.FloorLoadDefine.clear()
         cls.Misc.PreCompositeSection.clear()
+        cls.LoadToMass.clear()
         
 
     class SW:
@@ -610,10 +612,14 @@ class Load:
             return MidasAPI("GET", "/db/ltom")
         
         @classmethod
+        def clear(cls):
+            cls.data = []
+
+        @classmethod
         def delete(cls):
             cls.data = []
             return MidasAPI("DELETE", "/db/ltom")
-        
+
         @classmethod
         def sync(cls):
             cls.data = []
