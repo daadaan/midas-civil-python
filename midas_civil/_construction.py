@@ -22,23 +22,23 @@ class CS:
         _maxNO_:int = 0
         _isSync_:bool = False
 
-        def __init__(self, 
+        def __init__(self,
                     name: str,
-                    duration: float = 0, 
-                    s_group: str = None, 
-                    s_age: float = None, 
-                    s_type: str= None, 
-                    b_group: str = None, 
-                    b_pos: str = None, 
-                    b_type: str = None,
-                    l_group: str = None, 
-                    l_day: str = None, 
-                    l_type: str = None, 
-                    id: int = None, 
-                    sv_result: bool = True, 
-                    sv_step: bool = False, 
-                    load_in: bool = False, 
-                    nl: int = 5, 
+                    duration: float = 0,
+                    s_group: "str | list | None" = None,
+                    s_age: "float | list | None" = None,
+                    s_type: "str | list | None" = None,
+                    b_group: "str | list | None" = None,
+                    b_pos: "str | list | None" = None,
+                    b_type: "str | list | None" = None,
+                    l_group: "str | list | None" = None,
+                    l_day: "str | list | None" = None,
+                    l_type: "str | list | None" = None,
+                    id: int = None,
+                    sv_result: bool = True,
+                    sv_step: bool = False,
+                    load_in: bool = False,
+                    nl: int = 5,
                     addstp: list = None):
             """
             Construction Stage define.
@@ -311,18 +311,18 @@ class CS:
                 
                 # Handle boundary group activation
                 if csa.act_boundary_groups:
-                    stage_data["ACT_BNGR"] = []
+                    stage_data["ACT_BNDRY"] = []
                     for group in csa.act_boundary_groups:
-                        stage_data["ACT_BNGR"].append({
+                        stage_data["ACT_BNDRY"].append({
                             "BNGR_NAME": group["name"],
                             "POS": group["pos"]
                         })
-                
+
                 # Handle boundary group deactivation
                 if csa.deact_boundary_groups:
-                    stage_data["DACT_BNGR"] = []
+                    stage_data["DACT_BNDRY"] = []
                     for group_name in csa.deact_boundary_groups:
-                        stage_data["DACT_BNGR"].append(group_name)
+                        stage_data["DACT_BNDRY"].append(group_name)
                 
                 # Handle load group activation
                 if csa.act_load_groups:
@@ -413,15 +413,15 @@ class CS:
                             new_cs.deact_structure_groups.append({"name": group_name, "redist": redist})
                     
                     # Process activation boundary groups
-                    if "ACT_BNGR" in stag_data and stag_data["ACT_BNGR"]:
-                        for bngr in stag_data["ACT_BNGR"]:
+                    if "ACT_BNDRY" in stag_data and stag_data["ACT_BNDRY"]:
+                        for bngr in stag_data["ACT_BNDRY"]:
                             group_name = bngr.get("BNGR_NAME")
                             pos = bngr.get("POS")
                             new_cs.act_boundary_groups.append({"name": group_name, "pos": pos})
-                    
+
                     # Process deactivation boundary groups
-                    if "DACT_BNGR" in stag_data and stag_data["DACT_BNGR"]:
-                        for bngr in stag_data["DACT_BNGR"]:
+                    if "DACT_BNDRY" in stag_data and stag_data["DACT_BNDRY"]:
+                        for bngr in stag_data["DACT_BNDRY"]:
                             new_cs.deact_boundary_groups.append(bngr)
                     
                     # Process activation loads
@@ -552,7 +552,7 @@ class CS:
                     "",    # MAT
                     "",    # CSTAGE
                     0,     # AGE
-                    "AUTO", # PARTINFO_H
+                    0,     # PARTINFO_H — 0 means auto-compute h0 from section geometry
                     0,     # PARTINFO_VS
                     0,     # PARTINFO_M
                     1,     # AREA
@@ -665,7 +665,7 @@ class CS:
                             part.get("MAT", ""),
                             part.get("CSTAGE", ""),
                             part.get("AGE", 0),
-                            part.get("PARTINFO_H", "AUTO"),
+                            part.get("PARTINFO_H", 0),
                             part.get("PARTINFO_VS", 0),
                             part.get("PARTINFO_M", 0),
                             part.get("AREA", 1),

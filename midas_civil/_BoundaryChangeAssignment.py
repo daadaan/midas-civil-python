@@ -102,21 +102,24 @@ class BoundaryChangeAssignment:
     def _process_boundary_data(self, vBOUNDARY):
         """
         Process boundary data from list format to required JSON structure.
-        Input: [["L1", "BG2"], ["L2", "BG1"]]
-        Output: [{"BGCNAME": "L1", "vBG": ["BG2"]}, {"BGCNAME": "L2", "vBG": ["BG1"]}]
+        Input: [["BGC1", "BG1"], ["BGC1", "BG2"]] or [["BGC1", "BG1"]]
+        Output: [{"BGCNAME": "BGC1", "vBG": ["BG1", "BG2"]}]
+        Multiple rows with the same BGC name are merged into one entry.
         """
         if not vBOUNDARY:
             return []
-        
-        boundary_list = []
+
+        bgc_dict: dict = {}
         for boundary_pair in vBOUNDARY:
-            if len(boundary_pair) == 2:
-                boundary_list.append({
-                    "BGCNAME": boundary_pair[0],
-                    "vBG": [boundary_pair[1]]
-                })
-        
-        return boundary_list
+            if len(boundary_pair) < 2:
+                continue
+            bgc_name = boundary_pair[0]
+            bg_names = list(boundary_pair[1:])
+            if bgc_name not in bgc_dict:
+                bgc_dict[bgc_name] = []
+            bgc_dict[bgc_name].extend(bg_names)
+
+        return [{"BGCNAME": name, "vBG": bgs} for name, bgs in bgc_dict.items()]
     
     def _get_load_cases(self):
         """
@@ -177,7 +180,10 @@ class BoundaryChangeAssignment:
                     "LCNAME": case_name
                 })
         
-        # Process other load analysis types
+        # Process other load analysis types — only include when explicitly specified.
+        # "UNCHANGED" is only valid when a prior BCCT already exists; sending it on
+        # first-time configuration leaves those analysis types without a BGC and
+        # MIDAS may reject the entire PUT.
         analysis_types = {
             "MV": MV,
             "SM": SM,
@@ -186,13 +192,14 @@ class BoundaryChangeAssignment:
             "THNS": THNS,
             "ULAT": ULAT
         }
-        
+
         for analysis_type, bgcname in analysis_types.items():
-            load_anal_entry = {
-                "TYPE": analysis_type,
-                "BGCNAME": bgcname if bgcname is not None else "UNCHANGED"
-            }
-            load_anal_list.append(load_anal_entry)
+            if bgcname is not None:
+                load_anal_entry = {
+                    "TYPE": analysis_type,
+                    "BGCNAME": bgcname
+                }
+                load_anal_list.append(load_anal_entry)
         
         return load_anal_list
     
