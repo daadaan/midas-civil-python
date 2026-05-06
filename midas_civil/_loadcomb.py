@@ -1,4 +1,4 @@
-from ._mapi import MidasAPI
+from ._mapi import MidasAPI , NX
 # from ._model import *
 
 from typing import Literal, Optional, cast
@@ -182,7 +182,10 @@ class LoadCombination:
                     delete_ids = requested_ids.intersection(existing_ids)
                     delete_suffix = LoadCombination._ids_to_suffix(delete_ids)
                     if delete_suffix:
+                        _current_dispWarning = NX.dispWarning
+                        NX.dispWarning = False
                         MidasAPI("DELETE", endpoint + delete_suffix)
+                        NX.dispWarning = _current_dispWarning
                     MidasAPI("PUT", endpoint, json[i])   #Create new combination
     
     @classmethod
