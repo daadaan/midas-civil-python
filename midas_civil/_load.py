@@ -453,11 +453,7 @@ class Load:
                     "USE_PROJECTION": i.USE_PROJECTION,
                     "USE_ECCEN": i.USE_ECCEN,
                     "D": i.D,
-                    "P": i.P,
-                    "USE_ADDITIONAL": False,
-                    "ADDITIONAL_I_END": 0,
-                    "ADDITIONAL_J_END": 0,
-                    "USE_ADDITIONAL_J_END": False
+                    "P": i.P
                 }
                 if i.USE_ECCEN == True:
                     item_data.update({
@@ -477,6 +473,9 @@ class Load:
                 if i.ELEMENT not in json["Assign"]:
                     json["Assign"][i.ELEMENT] = {"ITEMS": []}
                 json["Assign"][i.ELEMENT]["ITEMS"].append(item_data)
+            for elem_data in json["Assign"].values():
+                for idx, item in enumerate(elem_data["ITEMS"], start=1):
+                    item["ID"] = idx
             return json
         
         @classmethod
