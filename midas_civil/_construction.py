@@ -1,5 +1,5 @@
 from ._mapi import MidasAPI
-from typing import Literal
+from typing import Literal, List, Optional, Union
 
 _CompSecType = Literal['GENERAL','USER','NORMAL']
 
@@ -25,21 +25,21 @@ class CS:
         def __init__(self,
                     name: str,
                     duration: float = 0,
-                    s_group: "str | list | None" = None,
-                    s_age: "float | list | None" = None,
-                    s_type: "str | list | None" = None,
-                    b_group: "str | list | None" = None,
-                    b_pos: "str | list | None" = None,
-                    b_type: "str | list | None" = None,
-                    l_group: "str | list | None" = None,
-                    l_day: "str | list | None" = None,
-                    l_type: "str | list | None" = None,
-                    id: int = None,
+                    s_group: Optional[Union[str, List]] = None,
+                    s_age: Optional[Union[float, List]] = None,
+                    s_type: Optional[Union[str, List]] = None,
+                    b_group: Optional[Union[str, List]] = None,
+                    b_pos: Optional[Union[str, List]] = None,
+                    b_type: Optional[Union[str, List]] = None,
+                    l_group: Optional[Union[str, List]] = None,
+                    l_day: Optional[Union[str, List]] = None,
+                    l_type: Optional[Union[str, List]] = None,
+                    id: Optional[int] = None,
                     sv_result: bool = True,
                     sv_step: bool = False,
                     load_in: bool = False,
                     nl: int = 5,
-                    addstp: list = None):
+                    addstp: Optional[list] = None):
             """
             Construction Stage define.
             
@@ -311,18 +311,18 @@ class CS:
                 
                 # Handle boundary group activation
                 if csa.act_boundary_groups:
-                    stage_data["ACT_BNDRY"] = []
+                    stage_data["ACT_BNGR"] = []
                     for group in csa.act_boundary_groups:
-                        stage_data["ACT_BNDRY"].append({
+                        stage_data["ACT_BNGR"].append({
                             "BNGR_NAME": group["name"],
                             "POS": group["pos"]
                         })
 
                 # Handle boundary group deactivation
                 if csa.deact_boundary_groups:
-                    stage_data["DACT_BNDRY"] = []
+                    stage_data["DACT_BNGR"] = []
                     for group_name in csa.deact_boundary_groups:
-                        stage_data["DACT_BNDRY"].append(group_name)
+                        stage_data["DACT_BNGR"].append(group_name)
                 
                 # Handle load group activation
                 if csa.act_load_groups:
@@ -413,15 +413,15 @@ class CS:
                             new_cs.deact_structure_groups.append({"name": group_name, "redist": redist})
                     
                     # Process activation boundary groups
-                    if "ACT_BNDRY" in stag_data and stag_data["ACT_BNDRY"]:
-                        for bngr in stag_data["ACT_BNDRY"]:
+                    if "ACT_BNGR" in stag_data and stag_data["ACT_BNGR"]:
+                        for bngr in stag_data["ACT_BNGR"]:
                             group_name = bngr.get("BNGR_NAME")
                             pos = bngr.get("POS")
                             new_cs.act_boundary_groups.append({"name": group_name, "pos": pos})
 
                     # Process deactivation boundary groups
-                    if "DACT_BNDRY" in stag_data and stag_data["DACT_BNDRY"]:
-                        for bngr in stag_data["DACT_BNDRY"]:
+                    if "DACT_BNGR" in stag_data and stag_data["DACT_BNGR"]:
+                        for bngr in stag_data["DACT_BNGR"]:
                             new_cs.deact_boundary_groups.append(bngr)
                     
                     # Process activation loads
