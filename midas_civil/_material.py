@@ -142,7 +142,7 @@ class Material:
         # ----------------------------------  USER MATERIAL ---------------------------------------------------
 
         class User:
-            def __init__(self,name='',E=0,pois=0,den=0,mass=0,therm=0,id:int=None,):
+            def __init__(self,name='',E=0.0,pois=0.0,den=0.0,mass=0.0,therm=0.0,id:int=None,):
                 if id == None: id =0
                 js =  {
                     "TYPE": "CONC",
