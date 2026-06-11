@@ -349,8 +349,9 @@ class CS:
         @classmethod
         def create(cls):
             """Creates construction stages in the database"""
-            if CS.STAGE._isSync_:
-                MidasAPI("DELETE", "/db/stag")
+            # DELETE /db/stag crashes the MIDAS connection when the stage list
+            # is empty (same behaviour as the known DELETE /db/bmld bug).
+            # PUT /db/stag is a full replacement, so DELETE is never needed.
             MidasAPI("PUT", "/db/stag", cls.json())
         
         @classmethod
@@ -585,7 +586,6 @@ class CS:
                     "MAT": defaults[2],
                     "CSTAGE": defaults[3],
                     "AGE": defaults[4],
-                    "PARTINFO_H": defaults[5],
                     "PARTINFO_VS": defaults[6],
                     "PARTINFO_M": defaults[7],
                     "AREA": defaults[8],
@@ -597,6 +597,10 @@ class CS:
                     "WAREA": defaults[14],
                     "IW": defaults[15]
                 }
+                # Omit PARTINFO_H when zero so MIDAS auto-calculates 2Ac/u.
+                # The API spec default is AUTO; sending 0 explicitly is rejected.
+                if defaults[5] > 0:
+                    part_info["PARTINFO_H"] = defaults[5]
                 
                 self.vPARTINFO.append(part_info)
             
