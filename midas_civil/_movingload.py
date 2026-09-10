@@ -12,31 +12,41 @@ class MovingLoad:
 
     @classmethod
     def create(cls):
+        if cls.LineLane.lanes:
+            cls.LineLane.create()
+        
+        # Assuming Vehicle and Case classes exist elsewhere or will be added later
+        if hasattr(cls, 'Vehicle') and cls.Vehicle.vehicles:
+            cls.Vehicle.create()
             
-            if cls.LineLane.lanes:
-                cls.LineLane.create()
-            
-            # Assuming Vehicle and Case classes exist elsewhere or will be added later
-            if hasattr(cls, 'Vehicle') and cls.Vehicle.vehicles:
-                cls.Vehicle.create()
-                
-            if hasattr(cls, 'Case') and cls.Case.cases:
-                cls.Case.create()
+        if hasattr(cls, 'Case') and cls.Case.cases:
+            cls.Case.create()
 
     @classmethod
     def delete(cls):
-            cls.Code.delete()
+        cls.LineLane.clear()
+        cls.Vehicle.clear()
+        cls.Case.clear()
+        cls.Code.delete()
+        
+    
+    @classmethod
+    def clear(cls):
+        cls.LineLane.clear()
+        cls.Vehicle.clear()
+        cls.Case.clear()
 
     @classmethod
     def sync(cls):
-            cls.LineLane.sync()
-            if hasattr(cls, 'Vehicle'):
-                cls.Vehicle.sync()
-            if hasattr(cls, 'Case'):
-                cls.Case.sync()
+        cls.LineLane.sync()
+        if hasattr(cls, 'Vehicle'):
+            cls.Vehicle.sync()
+        if hasattr(cls, 'Case'):
+            cls.Case.sync()
 
     
     class Code:
+        name = None
         
         def __init__(self, code_name: str):
             """
@@ -65,6 +75,7 @@ class MovingLoad:
                     }
                 }
             }
+            MovingLoad.Code.name = code_name
             MidasAPI("PUT", "/db/mvcd", json_data)
 
         @classmethod
@@ -131,11 +142,12 @@ class MovingLoad:
                 self.Skew_end = Skew_end
                 
                 # Ensure the correct moving load code is active in the model
-                MovingLoad.Code(code)
-                
-                # Avoid duplicating lanes if syncing
-                if not any(lane.id == self.id for lane in MovingLoad.LineLane.lanes):
-                    MovingLoad.LineLane.lanes.append(self)
+                if MovingLoad.Code.name == code:
+                    # Avoid duplicating lanes if syncing
+                    if not any(lane.id == self.id for lane in MovingLoad.LineLane.lanes):
+                        MovingLoad.LineLane.lanes.append(self)
+                else:
+                    print(f"  ⚠️   Moving Load code is different than Lane code or not defined. Line Lane '{Lane_name}' will not be created.\n        Kindly use MovingLoad.Code('{code}')")
 
             # Definition of country-specific subclasses
             class India:
@@ -487,6 +499,10 @@ class MovingLoad:
                 # Simple deletion
                 MidasAPI("DELETE", endpoint, {"Remove": lane_ids})
                 
+            @classmethod
+            def clear(cls):
+                cls.lanes = []
+
             @classmethod
             def sync(cls):
                 """
@@ -959,7 +975,11 @@ class MovingLoad:
                     data["Assign"][str(v.id)] = vehicle_data
             
             return data
-
+        
+        @classmethod
+        def clear(cls):
+            cls.vehicles = []
+              
         @classmethod
         def sync(cls):
             """
@@ -1073,180 +1093,128 @@ class MovingLoad:
             return MidasAPI("DELETE", "/db/mvhl")
 
 
-#--------------------------------------------------Load Case--------------------------------------------
-
     class Case:
-        
         cases = []
 
         def __init__(self, code: str, case_id: int, params: dict):
-            """
-            Internal constructor for the Case class. User should use country-specific subclasses.
-            """
             self.code = code
             self.id = case_id
             self.params = params
             
-            # Add the new case instance to the class-level list, avoiding duplicates by ID
             if not any(c.id == self.id for c in self.__class__.cases):
                 self.__class__.cases.append(self)
 
         @classmethod
         def create(cls):
-            """
-            Creates moving load cases in the Midas model for all defined country codes.
-            """
             if not cls.cases:
                 print("No moving load cases to create.")
                 return
+            india_cases = [c for c in cls.cases if c.code == "INDIA"]
+            euro_cases = [c for c in cls.cases if c.code == "EUROCODE"]
+            general_cases = [c for c in cls.cases if c.code not in ["INDIA", "EUROCODE"]]
             
-            # Separate cases by country code and send them to the appropriate API endpoint
-            country_codes = set(c.code for c in cls.cases)
-            for code in country_codes:
-                cases_to_create = [c for c in cls.cases if c.code == code]
-                if cases_to_create:
-                    json_data = cls.json(cases_to_create)
-                    endpoint = ""
-                    if code == "INDIA":
-                        endpoint = "/db/MVLDid"
-                    elif code == "EUROCODE":
-                        endpoint = "/db/MVLDeu"
-                    
-                    if endpoint:
-                        MidasAPI("PUT", endpoint, json_data)
+            if india_cases: MidasAPI("PUT", "/db/MVLDid", cls.json(india_cases))
+            if euro_cases: MidasAPI("PUT", "/db/MVLDeu", cls.json(euro_cases))
+            if general_cases: MidasAPI("PUT", "/db/mvld", cls.json(general_cases))
             
-            # Clear the list after creation
             cls.cases.clear()
 
         @classmethod
         def json(cls, case_list=None):
-            """Generates the JSON for a list of cases. Uses all stored cases if list is not provided."""
-            if case_list is None:
-                case_list = cls.cases
+            if case_list is None: case_list = cls.cases
             data = {"Assign": {}}
-            for case in case_list:
-                data["Assign"][str(case.id)] = case.params
+            for case in case_list: data["Assign"][str(case.id)] = case.params
             return data
 
         @classmethod
         def get(cls):
-            """
-            Retrieves all moving load cases from the Midas model 
-            """
             all_cases_data = {}
-            
-            # Define endpoints and their expected response keys.
-            endpoints = {
-                "/db/MVLDid": "MVLDID",
-                "/db/MVLDeu": "MVLDEU"
-            }
-
+            endpoints = {"/db/MVLDid": "MVLDID", "/db/MVLDeu": "MVLDEU", "/db/mvld": "MVLD"}
             for endpoint, response_key in endpoints.items():
                 api_data = MidasAPI("GET", endpoint)
-                
-                # Check if the response is valid and contains the expected key
                 if api_data and response_key in api_data:
-                    # Add the data under its original API key (e.g., "MVLDID")
                     all_cases_data[response_key] = api_data[response_key]
-            
             return all_cases_data
 
         @classmethod
         def delete(cls):
-            """Deletes all moving load cases from the Midas model."""
             all_cases_in_model = cls.get()
-            if not all_cases_in_model:
-                return
+            if not all_cases_in_model: return
+            if "MVLDID" in all_cases_in_model: MidasAPI("DELETE", "/db/MVLDid")
+            if "MVLDEU" in all_cases_in_model: MidasAPI("DELETE", "/db/MVLDeu")
+            if "MVLD" in all_cases_in_model: MidasAPI("DELETE", "/db/mvld")
 
-            if "MVLDID" in all_cases_in_model:
-                MidasAPI("DELETE", "/db/MVLDid")
-            if "MVLDEU" in all_cases_in_model:
-                MidasAPI("DELETE", "/db/MVLDeu")
+        @classmethod
+        def clear(cls):
+            """Clears all locally defined cases."""
+            cls.cases = []
 
         @classmethod
         def sync(cls):
-            """
-            Synchronizes the load case data from the Midas model 
-            """
             cls.cases = []
             response = cls.get()
+            current_code = "UNKNOWN"
+            try:
+                code_response = MovingLoad.Code.get()
+                if code_response and 'MVCD' in code_response:
+                    mvcd_data = code_response['MVCD']
+                    for code_id, code_info in mvcd_data.items():
+                        if isinstance(code_info, dict) and 'CODE' in code_info:
+                            current_code = code_info['CODE']
+                            break
+            except Exception: pass
 
-            # Sync India Cases
             if "MVLDID" in response:
                 for case_id, case_data in response["MVLDID"].items():
                     name = case_data.get("LCNAME")
                     num_lanes = case_data.get("NUM_LOADED_LANES")
                     scale_factor = case_data.get("SCALE_FACTOR")
 
-                    # Case 1: Permit Vehicle Load
                     if case_data.get("OPT_LC_FOR_PERMIT_LOAD"):
                         MovingLoad.Case.India(
-                            id=int(case_id),
-                            name=name,
-                            num_loaded_lanes=num_lanes,
-                            scale_factor=scale_factor,
-                            opt_lc_for_permit=True,
-                            permit_vehicle_id=case_data.get("PERMIT_VEHICLE"),
-                            ref_lane_id=case_data.get("REF_LANE"),
-                            eccentricity=case_data.get("ECCEN"),
+                            id=int(case_id), name=name, num_loaded_lanes=num_lanes, scale_factor=scale_factor,
+                            opt_lc_for_permit=True, permit_vehicle_id=case_data.get("PERMIT_VEHICLE"),
+                            ref_lane_id=case_data.get("REF_LANE"), eccentricity=case_data.get("ECCEN"),
                             permit_scale_factor=case_data.get("PERMIT_SCALE_FACTOR")
                         )
-                    # Case 2: Auto Live Load Combination
                     elif case_data.get("OPT_AUTO_LL"):
                         sub_items = []
                         for item in case_data.get("SUB_LOAD_ITEMS", []):
                             sub_items.append([
-                                item.get("SCALE_FACTOR"),
-                                item.get("VEHICLE_CLASS_1"),
-                                item.get("VEHICLE_CLASS_2"),
-                                item.get("FOOTWAY"),
-                                item.get("SELECTED_LANES"),
-                                item.get("SELECTED_FOOTWAY_LANES") # Will be None if not present
+                                item.get("SCALE_FACTOR"), item.get("VEHICLE_CLASS_1"), item.get("VEHICLE_CLASS_2"),
+                                item.get("FOOTWAY"), item.get("SELECTED_LANES"), item.get("SELECTED_FOOTWAY_LANES") 
                             ])
                         MovingLoad.Case.India(
-                            id=int(case_id),
-                            name=name,
-                            num_loaded_lanes=num_lanes,
-                            scale_factor=scale_factor,
-                            opt_auto_ll=True,
-                            sub_load_items=sub_items
+                            id=int(case_id), name=name, num_loaded_lanes=num_lanes, scale_factor=scale_factor,
+                            opt_auto_ll=True, sub_load_items=sub_items
                         )
-                    # Case 3: General Load
                     else:
                         sub_items = []
                         for item in case_data.get("SUB_LOAD_ITEMS", []):
                             sub_items.append([
-                                item.get("SCALE_FACTOR"),
-                                item.get("MIN_NUM_LOADED_LANES"),
-                                item.get("MAX_NUM_LOADED_LANES"),
-                                item.get("VEHICLE_CLASS_1"),
-                                item.get("SELECTED_LANES")
+                                item.get("SCALE_FACTOR"), item.get("MIN_NUM_LOADED_LANES"),
+                                item.get("MAX_NUM_LOADED_LANES"), item.get("VEHICLE_CLASS_1"), item.get("SELECTED_LANES")
                             ])
                         MovingLoad.Case.India(
-                            id=int(case_id),
-                            name=name,
-                            num_loaded_lanes=num_lanes,
-                            scale_factor=scale_factor,
-                            opt_auto_ll=False,
-                            sub_load_items=sub_items
+                            id=int(case_id), name=name, num_loaded_lanes=num_lanes, scale_factor=scale_factor,
+                            opt_auto_ll=False, sub_load_items=sub_items
                         )
 
-            # Sync Eurocode Cases
             if "MVLDEU" in response:
                 for case_id, case_data in response["MVLDEU"].items():
-                    # The Eurocode constructor can handle the raw dictionary via **kwargs
-                    # by leveraging its fallback mechanism when sub_load_items is not provided.
                     name = case_data.pop("LCNAME")
                     load_model = case_data.pop("TYPE_LOADMODEL")
                     use_optimization = case_data.pop("OPT_AUTO_OPTIMIZE")
-                    
-                    MovingLoad.Case.Eurocode(
-                        id=int(case_id),
-                        name=name,
-                        load_model=load_model,
-                        use_optimization=use_optimization,
-                        **case_data  # Pass the rest of the data as keyword arguments
-                    )
+                    MovingLoad.Case.Eurocode(id=int(case_id), name=name, load_model=load_model, use_optimization=use_optimization, **case_data)
+            
+            if "MVLD" in response:
+                for case_id, case_data in response["MVLD"].items():
+                    name = case_data.pop("LCNAME", f"Case_{case_id}")
+                    case_type = case_data.pop("TYPE", 0)
+                    desc = case_data.pop("DESC", "")
+                    params = {"LCNAME": name, "DESC": desc, "TYPE": case_type}
+                    params.update(case_data)
+                    MovingLoad.Case(current_code, int(case_id), params)
 
         class India:
             """
@@ -1271,13 +1239,7 @@ class MovingLoad:
                         eccentricity: float = None,
                         permit_scale_factor: float = None):
                 """
-               
-                    name (str): The name of the load case (LCNAME).
-                    num_loaded_lanes (int): The number of loaded lanes.
-                    id (int, optional): A unique integer ID for the case.
-                    opt_auto_ll (bool, optional): Set to True for "Auto Live Load Combinations".
-                    opt_lc_for_permit (bool, optional): Set to True for "Load Cases for Permit Vehicle".
-                    sub_load_items (list, optional): A list of lists defining sub-loads. The format depends on the selected options:
+                Moving Load Case for INDIA.
 
                         *** Case 1: General Load Format (opt_auto_ll=False) ***
                         Each inner list must contain 5 items in this order:
@@ -1306,19 +1268,13 @@ class MovingLoad:
                     permit_scale_factor (float, optional): Scale factor for the permit vehicle. Required for permit cases.
                 """
                 if id is None:
-                    # Correctly reference the 'cases' list through its full path
                     case_id = (max(c.id for c in MovingLoad.Case.cases) + 1) if MovingLoad.Case.cases else 1
                 else:
                     case_id = id
+                
                 final_scale_factor = scale_factor if scale_factor is not None else [1, 0.9, 0.8, 0.8]
 
-                params = {
-                    "LCNAME": name,
-                    "DESC": "",
-                    "SCALE_FACTOR": final_scale_factor,
-                    "NUM_LOADED_LANES": num_loaded_lanes
-                }
-                
+                params = {"LCNAME": name, "DESC": "", "SCALE_FACTOR": final_scale_factor, "NUM_LOADED_LANES": num_loaded_lanes}
                 formatted_sub_loads = []
 
                 if opt_lc_for_permit:
@@ -1366,93 +1322,47 @@ class MovingLoad:
 
                     for item_list in sub_load_items:
                         formatted_sub_loads.append({
-                            "SCALE_FACTOR": item_list[0],
-                            "MIN_NUM_LOADED_LANES": item_list[1],
-                            "MAX_NUM_LOADED_LANES": item_list[2],
-                            "VEHICLE_CLASS_1": item_list[3],
+                            "SCALE_FACTOR": item_list[0], "MIN_NUM_LOADED_LANES": item_list[1],
+                            "MAX_NUM_LOADED_LANES": item_list[2], "VEHICLE_CLASS_1": item_list[3],
                             "SELECTED_LANES": item_list[4]
                         })
 
-                    params.update({
-                        "OPT_AUTO_LL": False,
-                        "OPT_LC_FOR_PERMIT_LOAD": False,
-                        "SUB_LOAD_ITEMS": formatted_sub_loads
-                    })
+                    params.update({"OPT_AUTO_LL": False, "OPT_LC_FOR_PERMIT_LOAD": False, "SUB_LOAD_ITEMS": formatted_sub_loads})
 
                 MovingLoad.Case("INDIA", case_id, params)
 
         class Eurocode:
-            
-            def __init__(self,
-                        name: str,
-                        load_model: int,
-                        use_optimization: bool = False,
-                        id: int = None,
-                        sub_load_items: list = None,
-                        **kwargs):
+            def __init__(self, name: str, load_model: int, use_optimization: bool = False,
+                        id: int = None, sub_load_items: list = None, **kwargs):
                 """
-                
-                    name (str): The name of the load case (LCNAME).
-                    load_model (int): The Eurocode Load Model type (1-5).
-                    use_optimization (bool, optional): Set to True for "Moving Load Optimization". Defaults to False.
-                    id (int, optional): A unique integer ID for the case. Auto-assigned if None.
-                    sub_load_items (list, optional): Simplified list input. Format depends on the load_model and use_optimization.
-                    **kwargs: Additional individual parameters (for backward compatibility).
+                Moving Load Case for EUROCODE.
 
-                * General Load (use_optimization=False) *
-
-                - load_model = 1: [opt_leading, vhl_name1, vhl_name2, selected_lanes, remaining_area, footway_lanes]
-                Example: [False, "V1", "V2", ["L1"], ["L2"], ["F1"]]
-
-                - load_model = 2: [opt_leading, opt_comb, [(name, sf, min_L, max_L, [lanes]), ...]]
-                Example: [True, 1, [("V_Permit", 1.0, 1, 4, ["L1", "L2"])]]
-
-                - load_model = 3: [opt_leading, vhl_name1, vhl_name2, selected_lanes, remaining_area]
-                Example: [False, "V1", "V3", ["L1", "L2"], ["L3"]]
-
-                - load_model = 4: [opt_leading, vhl_name1, vhl_name2, selected_lanes, remaining_area, straddling_lanes]
-                Where straddling_lanes is a list of dicts: [{'NAME1': 'start', 'NAME2': 'end'}, ...]
-                Example: [False, "V1", "V4", ["L1"], ["L2"], [{"NAME1": "L3", "NAME2": "L4"}]]
-
-                - load_model = 5 (Railway): [opt_psi, opt_comb, [sf1,sf2,sf3], [mf1,mf2,mf3], [(name, sf, min_L, max_L, [lanes]), ...]]
-                Example: [False, 1, [0.8,0.7,0.6], [1,1,0.75], [("Rail-V", 1, 1, 1, ["T1"])]]
-
-                * Moving Load Optimization (use_optimization=True) *
-
-                - load_model = 1: [opt_leading, vhl_name1, vhl_name2, min_dist, opt_lane, loaded_lanes, [selected_lanes]]
-                Example: [False, "V1", "V2", 10, "L1", 2, ["L1", "L2"]]
-
-                - load_model = 2: [opt_leading, opt_comb, min_dist, opt_lane, min_v, max_v, [(name, sf), ...]]
-                Example: [False, 1, 10, "L1", 1, 2, [("V_Permit", 1.0), ("V_Other", 0.8)]]
-
-                - load_model = 3: [opt_leading, vhl_name1, vhl_name2, min_dist, opt_lane, loaded_lanes, [selected_lanes]]
-                Example: [True, "V1", "V3_auto", 10, "L1", 3, ["L1", "L2", "L3"]]
-
-                - load_model = 4: [opt_leading, vhl_name1, vhl_name2, min_dist, opt_lane, loaded_lanes, [selected_lanes], [straddling_lanes]]
-                Example: [True, "V1", "V4_auto", 10, "L2", 3, ["L1", "L3"], [{"NAME1": "L3", "NAME2": "L4"}]]
-
-                - load_model = 5 (Railway): [opt_psi, opt_comb, [sf1,sf2,sf3], [mf1,mf2,mf3], min_dist, opt_lane, min_v, max_v, [(name, sf), ...]]
-                Example: [False, 1, [0.8,0.7,0.6], [1,1,0.75], 20, "T1", 1, 1, [("Rail-V", 1)]]
+                Parameters:
+                - name (str): Name of the load case.
+                - load_model (int): 1 = LM1, 2 = LM2, 3 = LM3, 4 = LM4, 5 = LM1+LM3.
+                - use_optimization (bool): True to enable moving load optimization.
+                - sub_load_items (list): Format varies tightly depending on load model and optimization:
+                    LM1 (No Opt): [opt_leading, vhlname1, vhlname2, [sln_list], [sra_list], [fln_list]]
+                    LM2 (No Opt): [opt_leading, opt_comb, [[name, scale_factor, min_lane_type, max_lane_type, [sln_list]]]]
+                    LM1 (With Opt): [opt_leading, vhlname1, vhlname2, min_veh_dist, optimize_lane_name, loaded_lane, [sln_list]]
+                    LM2 (With Opt): [opt_leading, opt_comb, min_veh_dist, opt_lane_name, min_vhl, max_vhl, [[name, scale]]]
                 """
                 if id is None:
-                    # Correctly reference the 'cases' list through its full path
                     case_id = (max(c.id for c in MovingLoad.Case.cases) + 1) if MovingLoad.Case.cases else 1
                 else:
                     case_id = id
+                
                 params = {
-                    "LCNAME": name,
-                    "DESC": kwargs.get("DESC", ""),
-                    "TYPE_LOADMODEL": load_model,
-                    "OPT_AUTO_OPTIMIZE": use_optimization
+                    "LCNAME": name, "DESC": kwargs.get("DESC", ""),
+                    "TYPE_LOADMODEL": load_model, "OPT_AUTO_OPTIMIZE": use_optimization
                 }
 
                 if sub_load_items is None:
-                    # Fallback to kwargs for backward compatibility if sub_load_items is not used
                     params.update(kwargs)
                     MovingLoad.Case("EUROCODE", case_id, params)
                     return
 
-                if not use_optimization:  # General Load
+                if not use_optimization:
                     if load_model == 1:
                         params.update({"OPT_LEADING": sub_load_items[0], "VHLNAME1": sub_load_items[1], "VHLNAME2": sub_load_items[2], "SLN_LIST": sub_load_items[3], "SRA_LIST": sub_load_items[4], "FLN_LIST": sub_load_items[5]})
                     elif load_model == 2:
@@ -1465,8 +1375,7 @@ class MovingLoad:
                     elif load_model == 5:
                         sub_loads = [{"TYPE": 2, "NAME": item[0], "SCALE_FACTOR": item[1], "MIN_LOAD_LANE_TYPE": item[2], "MAX_LOAD_LANE_TYPE": item[3], "SLN_LIST": item[4]} for item in sub_load_items[4]]
                         params.update({"OPT_PSI_FACTOR": sub_load_items[0], "OPT_COMB": sub_load_items[1], "SCALE_FACTOR1": sub_load_items[2][0], "SCALE_FACTOR2": sub_load_items[2][1], "SCALE_FACTOR3": sub_load_items[2][2], "MULTI_FACTOR1": sub_load_items[3][0], "MULTI_FACTOR2": sub_load_items[3][1], "MULTI_FACTOR3": sub_load_items[3][2], "SUB_LOAD_LIST": sub_loads})
-                
-                else:  # Moving Load Optimization
+                else:
                     if load_model == 1:
                         params.update({"OPT_LEADING": sub_load_items[0], "VHLNAME1": sub_load_items[1], "VHLNAME2": sub_load_items[2], "MINVHLDIST": sub_load_items[3], "OPTIMIZE_LANE_NAME": sub_load_items[4], "LOADEDLANE": sub_load_items[5], "SLN_LIST": sub_load_items[6]})
                     elif load_model == 2:
@@ -1482,9 +1391,8 @@ class MovingLoad:
 
                 MovingLoad.Case("EUROCODE", case_id, params)
 
-
-
-        # COMMON WRAPPER FOR /DB/MVLD 
+# ---------------------------------------------------------------------------------------------------------
+        # COMMON WRAPPER FOR /DB/MVLD (General, Permit, Optimize Load Cases)
         # ---------------------------------------------------------------------------------------------------------
         
         class GeneralCaseWrapper:
@@ -1571,12 +1479,12 @@ class MovingLoad:
                         if len(asl_data) > 6 and asl_data[6] is not None:
                             strad_data = asl_data[6]
                             if isinstance(strad_data, list):
-                                
+                                # If it's a list inside a list: e.g. [["L1", "L3"], ["L2", "L3"]]
                                 if len(strad_data) > 0 and isinstance(strad_data[0], list):
                                     line_items["STRAD_LLAN1_NAMES"] = strad_data[0]
                                     if len(strad_data) > 1 and isinstance(strad_data[1], list):
                                         line_items["STRAD_LLAN2_NAMES"] = strad_data[1]
-                                
+                                # If it's just a single 1D list: e.g. ["L1", "L3"]
                                 else:
                                     line_items["STRAD_LLAN1_NAMES"] = strad_data
 
@@ -1625,7 +1533,7 @@ class MovingLoad:
                 MovingLoad.Case(code, id, params)
 
         # ---------------------------------------------------------------------------------------------------------
-        # COUNTRY SPECIFIC
+        # COUNTRY SPECIFIC CLASSES WITH FULLY EXPOSED ARGUMENTS & SUGGESTIONS
         # ---------------------------------------------------------------------------------------------------------
 
         class KSCELSD15(GeneralCaseWrapper):

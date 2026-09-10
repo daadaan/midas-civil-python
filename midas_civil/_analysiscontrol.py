@@ -1,11 +1,18 @@
 from ._mapi import MidasAPI
+from typing import Optional,Literal
+#type hints
+_EigenAnalysisType = Literal['EIGEN','LANCZOS','RITZ']
+_HoH_Element_Stress_Evaluation = Literal['CENTER','GAUSS','NODAL']
+_HoH_Type = Literal['CREEP','SHRINK','BOTH']
+_HoH_Creep_Calculation_method = Literal['GENERAL','EFFECTIVE MODULUS']
 #--------------------------------------------------------------------------------------------------
 
 class AnalysisControl:
+    _Controls = {}
     
     class MainControlData:
         
-        data = []
+        data:Optional['AnalysisControl.MainControlData'] = None
         
         def __init__(self, 
                     ardc: bool = True,
@@ -57,7 +64,6 @@ class AnalysisControl:
                 raise ValueError("tol (Convergence Tolerance) is required")
             
             # ID is always 1
-            self.ID = 1
             
             # Set parameters
             self.ARDC = ardc
@@ -71,7 +77,7 @@ class AnalysisControl:
             self.CLATS = clats
             
             # Add to static list
-            AnalysisControl.MainControlData.data.append(self)
+            AnalysisControl.MainControlData.data = self
             
             # Automatically execute the data when instance is created
             self._execute()
@@ -94,13 +100,13 @@ class AnalysisControl:
                 "CLATS": self.CLATS
             }
             
-            json_data["Assign"][str(self.ID)] = control_data
+            json_data["Assign"]['1'] = control_data
             
             MidasAPI("PUT", "/db/actl", json_data)
 
     class PDelta:
         """Create P-Delta Analysis Control Object in Python"""
-        data = []
+        data:Optional['AnalysisControl.PDelta'] = None
         
         def __init__(self, 
                     iter: int = 5,
@@ -140,7 +146,7 @@ class AnalysisControl:
                     raise ValueError(f"load_case_data[{i}][1] (scale factor) must be a number")
             
             # ID is always 1
-            self.ID = 1
+            # self.ID = 1
             
             # Set parameters
             self.ITER = iter
@@ -148,7 +154,7 @@ class AnalysisControl:
             self.LOAD_CASE_DATA = load_case_data
             
             # Add to static list
-            AnalysisControl.PDelta.data.append(self)
+            AnalysisControl.PDelta.data = self
             
             # Automatically execute the data when instance is created
             self._execute()
@@ -173,13 +179,13 @@ class AnalysisControl:
                 "PDEL_CASES": pdel_cases
             }
             
-            json_data["Assign"][str(self.ID)] = control_data
+            json_data["Assign"]['1'] = control_data
             
             MidasAPI("PUT", "/db/pdel", json_data)
 
     class Buckling:
             """Create Buckling Analysis Control Object in Python"""
-            data = []
+            data:Optional['AnalysisControl.Buckling'] = None
             
             def __init__(self, 
                         mode_num: int = None,
@@ -243,7 +249,7 @@ class AnalysisControl:
                         raise ValueError(f"load_case_data[{i}][2] (load type) must be 0 (Variable) or 1 (Constant)")
                 
                 # ID is always 1
-                self.ID = 1
+                # self.ID = 1
                 
                 # Set parameters
                 self.MODE_NUM = mode_num
@@ -255,7 +261,7 @@ class AnalysisControl:
                 self.LOAD_CASE_DATA = load_case_data
                 
                 # Add to static list
-                AnalysisControl.Buckling.data.append(self)
+                AnalysisControl.Buckling.data = self
                 
                 # Automatically execute the data when instance is created
                 self._execute()
@@ -285,33 +291,29 @@ class AnalysisControl:
                     "ITEMS": items
                 }
                 
-                json_data["Assign"][str(self.ID)] = control_data
+                json_data["Assign"]['1'] = control_data
                 
                 MidasAPI("PUT", "/db/buck", json_data)
 
-
     class EigenValue:
         """Create Eigen Vector Analysis Control Object in Python"""
-        data = []
+        data:Optional['AnalysisControl.EigenValue'] = None
         
         def __init__(self, 
-                    analysis_type: str = None,
+                    analysis_type: _EigenAnalysisType  = 'EIGEN',
                     # EIGEN specific parameters
-                    ifreq: int = 1,
-                    iiter: int = 20,
-                    idim: int = 1,
-                    tol: float = 0,
+                    nFreq: int = 1,
+                    nIter: int = 20,
+                    nSubspaceDim: int = 1,
+                    tolerance: float = 1e-10,
                     # LANCZOS specific parameters 
-                    frequency_range: list = None,  
-                    bstrum: bool = False,
-                    bminmax: bool = None,
-                    frmin: float = None,
-                    frmax: float = None,
+                    frequency_range: list[int,int] = [None,None],  
+                    bStrum: bool = False,
                     # RITZ specific parameters 
-                    bincnl: bool = False,
-                    ignum: int = None,
-                    load_vector: list = None,  
-                    vritz: list = None):
+                    load_Vectors: list[str,int] = None,
+                    nGL_LinkVectors: int = 0,
+                      
+                    ):
             """
             Eigen Vector Analysis Control 
             
@@ -368,6 +370,11 @@ class AnalysisControl:
                 )
             """
             
+            bminmax = False
+            frmin=0
+            frmax=1600
+            vritz = []
+
             # Validate required parameters
             if analysis_type is None:
                 raise ValueError("analysis_type is required")
@@ -376,16 +383,17 @@ class AnalysisControl:
             
             # Validate type-specific required parameters
             if analysis_type in ["EIGEN"]:
-                if ifreq is None:
+                if nFreq is None:
                     raise ValueError("ifreq (Number of Frequencies) is required for EIGEN")
-                if iiter is None:
+                if nIter is None:
                     raise ValueError("iiter (Number of Iterations) is required for EIGEN")
+                
             
             # Handle LANCZOS parameters
-            if analysis_type == "LANCZOS":
+            elif analysis_type == "LANCZOS":
                 # Handle new frequency_range format
-                if frequency_range is not None:
-                    if not isinstance(frequency_range, list) or len(frequency_range) != 2:
+                if frequency_range != [None,None]:
+                    if not isinstance(frequency_range, (list,tuple)) or len(frequency_range) != 2:
                         raise ValueError("frequency_range must be a list with exactly 2 elements [frmin, frmax]")
                     if frequency_range[0] >= frequency_range[1]:
                         raise ValueError("frmin must be less than frmax in frequency_range")
@@ -394,31 +402,19 @@ class AnalysisControl:
                     bminmax = True
                     frmin = frequency_range[0]
                     frmax = frequency_range[1]
-                else:
-                    # Use legacy parameters or defaults
-                    if bminmax is None:
-                        bminmax = False
-                    if bminmax and (frmin is None or frmax is None):
-                        raise ValueError("frmin and frmax are required when bminmax is True for LANCZOS")
-                    if frmin is not None and frmax is not None and frmin >= frmax:
-                        raise ValueError("frmin must be less than frmax")
-            
+                    
+
             # Handle RITZ parameters
-            if analysis_type == "RITZ":
-                if ignum is None:
-                    raise ValueError("ignum (Number of Generations) is required for RITZ")
+            elif analysis_type == "RITZ":
                 
                 # Handle new load_vector format
-                if load_vector is not None:
-                    if not isinstance(load_vector, list) or len(load_vector) == 0:
-                        raise ValueError("load_vector must be a non-empty list")
-                    
+                if load_Vectors is not None:
+
                     # Convert load_vector to vritz format
-                    vritz = []
                     ground_acc_types = ["ACCX", "ACCY", "ACCZ"]
                     
-                    for i, item in enumerate(load_vector):
-                        if not isinstance(item, list) or len(item) != 2:
+                    for item in load_Vectors:
+                        if not isinstance(item, (list,tuple)) or len(item) != 2:
                             raise ValueError(f"load_vector[{i}] must be a list with exactly 2 elements [name, nog]")
                         
                         name, nog = item
@@ -468,24 +464,29 @@ class AnalysisControl:
                     raise ValueError("Either load_vector or vritz is required for RITZ analysis")
             
             # ID is always 1
-            self.ID = 1
+            # self.ID = 1
             
             # Set parameters
             self.TYPE = analysis_type
-            self.iFREQ = ifreq
-            self.iITER = iiter
-            self.iDIM = idim
-            self.TOL = tol
+            self.iFREQ = nFreq
+
+            self.iITER = nIter
+            self.iDIM = nSubspaceDim
+            self.TOLERANCE = tolerance
+
+
             self.bMINMAX = bminmax
             self.FRMIN = frmin
             self.FRMAX = frmax
-            self.bSTRUM = bstrum
-            self.bINCNL = bincnl
-            self.iGNUM = ignum
+            self.bSTRUM = bStrum
+
+            self.bINCNL = not (nGL_LinkVectors==0)
+            self.iGNUM = nGL_LinkVectors
             self.vRITZ = vritz
             
             # Add to static list
-            AnalysisControl.EigenValue.data.append(self)
+            AnalysisControl.EigenValue.data = self
+            AnalysisControl._Controls["Eigen"] = self
             
             # Automatically execute the data when instance is created
             self._execute()
@@ -498,21 +499,22 @@ class AnalysisControl:
             
             control_data = {"TYPE": self.TYPE}
             
-            if self.TYPE in ["EIGEN", "LANCZOS"]:
+            if self.TYPE in ["EIGEN"]:
                 control_data.update({
                     "iFREQ": self.iFREQ,
                     "iITER": self.iITER,
                     "iDIM": self.iDIM,
-                    "TOL": self.TOL
+                    "TOL": self.TOLERANCE
                 })
                 
-                if self.TYPE == "LANCZOS":
-                    control_data.update({
-                        "bMINMAX": self.bMINMAX,
-                        "FRMIN": self.FRMIN,
-                        "FRMAX": self.FRMAX,
-                        "bSTRUM": self.bSTRUM
-                    })
+            elif self.TYPE == "LANCZOS":
+                control_data.update({
+                    "iFREQ": self.iFREQ,
+                    "bMINMAX": self.bMINMAX,
+                    "FRMIN": self.FRMIN,
+                    "FRMAX": self.FRMAX,
+                    "bSTRUM": self.bSTRUM
+                })
             
             elif self.TYPE == "RITZ":
                 control_data.update({
@@ -521,13 +523,13 @@ class AnalysisControl:
                     "vRITZ": self.vRITZ
                 })
             
-            json_data["Assign"][str(self.ID)] = control_data
+            json_data["Assign"]['1'] = control_data
             
             MidasAPI("PUT", "/db/eigv", json_data)
 
     class Settlement:
         
-        data = []
+        data:Optional['AnalysisControl.Settlement'] = None
         
         def __init__(self, 
                     concurrent_calc: bool = True,
@@ -557,14 +559,14 @@ class AnalysisControl:
             """
             
             # ID is always 1
-            self.ID = 1
+            # self.ID = 1
             
             # Set parameters
             self.CONCURRENT_CALC = concurrent_calc
             self.CONCURRENT_LINK = concurrent_link
             
             # Add to static list
-            AnalysisControl.Settlement.data.append(self)
+            AnalysisControl.Settlement.data = self
             
             # Automatically execute the data when instance is created
             self._execute()
@@ -580,6 +582,197 @@ class AnalysisControl:
                 "CONCURRENT_LINK": self.CONCURRENT_LINK
             }
             
-            json_data["Assign"][str(self.ID)] = control_data
+            json_data["Assign"]['1'] = control_data
             
             MidasAPI("PUT", "/db/smct", json_data)
+
+    class HeatOfHydration:
+
+        data: Optional['AnalysisControl.HeatOfHydration'] = None
+
+        def __init__(self,
+                     final_stage: bool = True,
+                     other_stage: str = None,
+                     integration_factor: float = 0.5,
+                     initial_temperature: float = 20,
+                     element_stress_evaluation: _HoH_Element_Stress_Evaluation = 'GAUSS',
+                     creep_and_shringkage: bool = True,
+                     type: _HoH_Type = "BOTH",
+                     creep_calculation_method: _HoH_Creep_Calculation_method = "GENERAL",
+                     no_of_iteration: int = None,
+                     Tolerance: float = None,
+                     phi_1: float = None,
+                     day_1: int = None,
+                     phi_2: float = None,
+                     day_2: int = None,
+                     use_equivalent_age: bool = False,
+                     include_self_load: bool = False,
+                     self_weight_factor: float = None
+                     ):
+            """
+            Heat of Hydration Analysis Control constructor for setting analysis conditions and parameters.
+            
+            Parameters:
+                final_stage: Assign the last stage as the true last stage (default True)
+                
+                other_stage: Construction Stage for Hydration (default None)
+                    - Assign a stage within the overall construction stages as the final stage
+                    - Required when final_stage is False
+                    
+                integration_factor: Temporal discretization factor used in heat transfer analysis (default 0.5)
+                    - 0.0: Forward difference
+                    - 0.5: Crank-Nicolson method
+                    - 0.66: Galerkin method (approx 2/3)
+                    - 1.0: Backward difference
+                    
+                initial_temperature: Initial temperature used in the heat transfer analysis (default 20)
+                
+                element_stress_evaluation: Location in solid elements for stress output (default 'GAUSS')
+                    - 'CENTER': Stresses at the centers of the solid elements
+                    - 'GAUSS': Stresses at the Gauss points
+                    - 'NODAL POINT': Interpolated stresses at the Gauss points for nodal stresses
+                    
+                creep_and_shringkage: Account for Creep and Shrinkage in the analysis (default True)
+                
+                type: Inclusion type of creep and shrinkage (default 'BOTH')
+                    - Options: 'CREEP', 'SHRINK', 'BOTH'
+                    - Only used if creep_and_shringkage is True
+                    
+                creep_calculation_method: Method for calculating creep (default 'GENERAL')
+                    - 'GENERAL': Uses specified Code (requires no_of_iteration and Tolerance)
+                    - 'EFFECTIVE MODULUS': Approximate calculation (requires phi_1, day_1, phi_2, day_2)
+                    
+                no_of_iteration: Maximum number of repetitions for creep iteration (default None)
+                    - Required if creep_and_shringkage is True and method is 'GENERAL'
+                    
+                Tolerance: Convergence tolerance for creep iteration (default None)
+                    - Required if creep_and_shringkage is True and method is 'GENERAL'
+                    
+                phi_1: Reduction factor applied to Modulus of Elasticity from 0(day) to day_1 (default None)
+                    - Required if creep calculation method is 'EFFECTIVE MODULUS'
+                    
+                day_1: End day for phi_1 application (default None)
+                    - Required if creep calculation method is 'EFFECTIVE MODULUS'
+                    
+                phi_2: Reduction factor applied to Modulus of Elasticity after day_2 (default None)
+                    - Required if creep calculation method is 'EFFECTIVE MODULUS'
+                    
+                day_2: Start day for phi_2 application (default None)
+                    - Required if creep calculation method is 'EFFECTIVE MODULUS'
+                    
+                use_equivalent_age: Use Equivalent Age based on Time and Temperature (default False)
+                
+                include_self_load: Include Self weight Load (default False)
+                
+                self_weight_factor: Scale factor for Self weight (default None)
+                    - Example: -1 to consider the Self weight in the gravity direction
+                    - Required if include_self_load is True
+                    - Needs to be <= 0
+
+            Examples:
+                # Basic control with General Creep method
+                AnalysisControl.HeatOfHydration(
+                    final_stage=True,
+                    integration_factor=0.5,
+                    initial_temperature=20,
+                    creep_and_shringkage=True,
+                    creep_calculation_method="GENERAL",
+                    no_of_iteration=20,
+                    Tolerance=0.001
+                )
+                
+                # Control up to a specific stage with Effective Modulus method and self-weight
+                AnalysisControl.HeatOfHydration(
+                    final_stage=False,
+                    other_stage="CS3",
+                    element_stress_evaluation="CENTER",
+                    creep_and_shringkage=True,
+                    creep_calculation_method="EFFECTIVE MODULUS",
+                    phi_1=0.73, day_1=3,
+                    phi_2=1.0, day_2=5,
+                    include_self_load=True,
+                    self_weight_factor=-1.0
+                )
+            """
+
+            # Validate conditional requirements
+            if not final_stage and not other_stage:
+                raise ValueError("other_stage (STAGE_NAME) is required when final_stage is False.")
+
+            if creep_and_shringkage:
+                if creep_calculation_method == "GENERAL":
+                    if no_of_iteration is None or Tolerance is None:
+                        raise ValueError("no_of_iteration and Tolerance are required for GENERAL creep calculation method.")
+                elif creep_calculation_method == "EFFECTIVE MODULUS":
+                    if None in (phi_1, day_1, phi_2, day_2):
+                        raise ValueError("phi_1, day_1, phi_2, and day_2 are required for EFFECTIVE MODULUS method.")
+                else:
+                    raise ValueError("creep_calculation_method must be 'GENERAL' or 'EFFECTIVE MODULUS'.")
+
+            if include_self_load and self_weight_factor is None:
+                raise ValueError("self_weight_factor is required when include_self_load is True.")
+
+            if self_weight_factor > 0:
+                raise ValueError("self_weight_factor needs to be <= 0")
+            
+
+            self.FINAL_STAGE = final_stage
+            self.STAGE_NAME = other_stage if not final_stage else ""
+            self.THETA = integration_factor
+            self.INIT_TEMP = initial_temperature
+            self.EVAL = element_stress_evaluation
+            self.OPT_USE_EQUI_AGE = use_equivalent_age
+            self.OPT_INCL_SELF_WEIGHT = include_self_load
+            self.SELF_WEIGHT_FACTOR = self_weight_factor if self_weight_factor is not None else 0
+            self.OPT_IS_CREEP_SHRINKAGE = creep_and_shringkage
+
+
+            self.ITEM = None
+            if self.OPT_IS_CREEP_SHRINKAGE:
+                calc_method_int = 0 if creep_calculation_method == "GENERAL" else 1
+                self.ITEM = {
+                    "TYPE": type,
+                    "CREEP_CALC_METHOD": calc_method_int
+                }
+
+                if calc_method_int == 0:
+                    self.ITEM["M_GENERAL"] = {
+                        "ITER": no_of_iteration,
+                        "TOL": Tolerance
+                    }
+                else:
+                    self.ITEM["M_EFF_MOD"] = {
+                        "PHI1": phi_1,
+                        "DAY1": day_1,
+                        "PHI2": phi_2,
+                        "DAY2": day_2
+                    }
+
+            AnalysisControl.HeatOfHydration.data = self
+            AnalysisControl._Controls['HoH'] = self
+
+            self._execute()
+
+        def _execute(self):
+            json_data = {"Assign": {}}
+
+            control_data = {
+                "FINAL_STAGE": self.FINAL_STAGE,
+                "STAGE_NAME": self.STAGE_NAME,
+                "THETA": self.THETA,
+                "INIT_TEMP": self.INIT_TEMP,
+                "EVAL": self.EVAL,
+                "OPT_USE_EQUI_AGE": self.OPT_USE_EQUI_AGE,
+                "OPT_INCL_SELF_WEIGHT": self.OPT_INCL_SELF_WEIGHT,
+                "OPT_IS_CREEP_SHRINKAGE": self.OPT_IS_CREEP_SHRINKAGE
+            }
+
+            if self.OPT_INCL_SELF_WEIGHT:
+                control_data["SELF_WEIGHT_FACTOR"] = self.SELF_WEIGHT_FACTOR
+
+            if self.OPT_IS_CREEP_SHRINKAGE and self.ITEM:
+                control_data["ITEM"] = self.ITEM
+
+            json_data["Assign"]['1'] = control_data
+
+            MidasAPI("PUT", "/db/HHCT", json_data)

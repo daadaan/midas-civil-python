@@ -2,7 +2,46 @@ from ._mapi import MidasAPI
 # from ._node import *
 from ._group import Group
 from ._load import Load_Case
+from typing import Literal
 
+#type hints for beamsection
+_BeamSectionSecType = Literal['General','PSC']
+_BeamSectionType = Literal['Element','Input']
+_BeamSectionDir = Literal['LY','LZ']
+_BeamSectionRefPos = Literal['Centroid','Top','Bot']
+
+#helper classes
+class _System():
+    def __init__(self,id,lcname,group,temperature):
+        self.ID = id
+        self.LCNAME = lcname
+        self.TEMPER = temperature
+        self.GROUP = group
+class _Element():
+    def __init__(self,id,lcname,group,temperature,element):
+        self.ID = id
+        self.ELEMENT = element
+        self.LCNAME = lcname
+        self.TEMP = temperature
+        self.GROUP_NAME = group    
+class _Gradient():
+    def __init__(self,id,element):
+        self.ID = id
+        self.ELEMENT = element
+class _Nodal():
+    def __init__(self,id,node,temperature,lcname,group,items):
+        self.ID = id
+        self.NODE = node
+        self.TEMPER = temperature
+        self.LCNAME = lcname
+        self.GROUP_NAME = group
+        self.ITEMS = items
+class _BeamSection():
+    def __init__(self,element,id,items):
+        self.ID = id
+        self.ELEMENT = element
+        self.ITEMS = items
+        
 def convList(item):
     if type(item) != list:
         return [item]
@@ -63,7 +102,7 @@ class Temperature:
         Example:
             Temperature.System(12.5, "Temp(+)", "LoadGroup1", 1)
         """
-        temps = []
+        temps:list[_System] = []
         
         def __init__(self, temperature, lcname, group="", id=None):
             chk = 0
@@ -150,16 +189,16 @@ class Temperature:
         Create Element Temperature Object in Python
         
         Parameters:
-            element (int): Element ID
+            element (int | list): Element ID or list of Element IDs
             temperature (float): Temperature value
             lcname (str): Load case name
             group (str): Load group name (default "")
             id (int): Temperature ID (optional)
         
         Example:
-            Temperature.Element(1, 35, "Temp(+)", "", 1)
+            Temperature.Element([1, 2, 3], 35, "Temp(+)", "", 1)
         """
-        temps = []
+        temps:list[_Element] = []
         
         def __init__(self, element, temperature, lcname, group="", id=None):
 
@@ -179,38 +218,61 @@ class Temperature:
                 if chk == 0:
                     Group.Load(group)
             
-            self.ELEMENT = element
-            self.TEMP = temperature
-            self.LCNAME = lcname
-            self.GROUP_NAME = group
+            elements = convList(element)
+            if not elements:
+                return
             
-            if id is None:
-                existing_ids = []
-                for temp in Temperature.Element.temps:
-                    if temp.ELEMENT == element:
-                        existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
-                self.ID = max(existing_ids, default=0) + 1
-            else:
-                self.ID = id
-            
-            existing_temp = None
-            for temp in Temperature.Element.temps:
-                if temp.ELEMENT == element:
-                    existing_temp = temp
-                    break
-            
-            item_data = {
-                "ID": self.ID, "LCNAME": self.LCNAME,
-                "GROUP_NAME": self.GROUP_NAME, "TEMP": self.TEMP
-            }
+            for i, el in enumerate(elements):
+                if id is None:
+                    existing_ids = []
+                    for temp in Temperature.Element.temps:
+                        if temp.ELEMENT == el:
+                            existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
+                    current_id = max(existing_ids, default=0) + 1
+                else:
+                    current_id = id
+                
+                item_data = {
+                    "ID": current_id, "LCNAME": lcname,
+                    "GROUP_NAME": group, "TEMP": temperature
+                }
 
-            if existing_temp:
-                if not hasattr(existing_temp, 'ITEMS'):
-                    existing_temp.ITEMS = []
-                existing_temp.ITEMS.append(item_data)
-            else:
-                self.ITEMS = [item_data]
-                Temperature.Element.temps.append(self)
+                existing_temp = None
+                for temp in Temperature.Element.temps:
+                    if temp.ELEMENT == el:
+                        existing_temp = temp
+                        break
+                
+                if existing_temp:
+                    if not hasattr(existing_temp, 'ITEMS'):
+                        existing_temp.ITEMS = []
+                    existing_temp.ITEMS.append(item_data)
+                    
+                    if i == 0:
+                        self.ELEMENT = el
+                        self.TEMP = temperature
+                        self.LCNAME = lcname
+                        self.GROUP_NAME = group
+                        self.ID = current_id
+                        self.ITEMS = existing_temp.ITEMS
+                else:
+                    if i == 0:
+                        self.ELEMENT = el
+                        self.TEMP = temperature
+                        self.LCNAME = lcname
+                        self.GROUP_NAME = group
+                        self.ID = current_id
+                        self.ITEMS = [item_data]
+                        Temperature.Element.temps.append(self)
+                    else:
+                        obj = self.__class__.__new__(self.__class__)
+                        obj.ELEMENT = el
+                        obj.TEMP = temperature
+                        obj.LCNAME = lcname
+                        obj.GROUP_NAME = group
+                        obj.ID = current_id
+                        obj.ITEMS = [item_data]
+                        Temperature.Element.temps.append(obj)
 
         @classmethod
         def json(cls):
@@ -264,7 +326,7 @@ class Temperature:
         Create Temperature Gradient Object in Python for Beam and Plate elements.
         
         Parameters:
-            element (int): Element ID to apply the gradient.
+            element (int | list): Element ID or list of Element IDs to apply the gradient.
             type (str): Element type, either 'Beam' or 'Plate'.
             lcname (str): Load Case Name (must exist in the model).
             tz (float): Temperature difference in the local z-direction (T2z - T1z).
@@ -275,7 +337,7 @@ class Temperature:
             hy (float, optional): Gradient value for local y-dir. If omitted, section default is used.
         
         Example for Beam (providing gradient values):
-            Temperature.Gradient(element=2, type='Beam', lcname='Temp(-)', tz=10, ty=-10, hz=1.2, hy=0.5)
+            Temperature.Gradient(element=[2, 3], type='Beam', lcname='Temp(-)', tz=10, ty=-10, hz=1.2, hy=0.5)
         
         Example for Beam (using section defaults):
             Temperature.Gradient(element=2, type='Beam', lcname='Temp(+)', tz=10, ty=-10)
@@ -283,7 +345,7 @@ class Temperature:
         Example for Plate (providing gradient value):
             Temperature.Gradient(element=21, type='Plate', lcname='Temp(-)', tz=10, hz=0.2)
         """
-        temps = []
+        temps:list[_Gradient] = []
 
         def __init__(self, element, type, lcname, tz, group="", hz=None, ty=0, hy=None,id=None):
 
@@ -303,55 +365,72 @@ class Temperature:
                 if chk == 0:
                     Group.Load(group)
             
-            self.ELEMENT = element
-            
-            if id is None:
-                existing_ids = []
-                for temp in Temperature.Gradient.temps:
-                    if temp.ELEMENT == element:
-                        existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
-                self.ID = max(existing_ids, default=0) + 1
-            else:
-                self.ID = id
-
             use_hz = (hz is None)
             use_hy = (hy is None)
 
-            item_data = {
-                "ID": self.ID,
-                "LCNAME": lcname,
-                "GROUP_NAME": group,
-                "TZ": tz,
-                "USE_HZ": use_hz,
-            }
+            elements = convList(element)
+            if not elements:
+                return
 
-            if not use_hz:
-                item_data["HZ"] = hz
+            for i, el in enumerate(elements):
+                if id is None:
+                    existing_ids = []
+                    for temp in Temperature.Gradient.temps:
+                        if temp.ELEMENT == el:
+                            existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
+                    current_id = max(existing_ids, default=0) + 1
+                else:
+                    current_id = id
 
-            if type.lower() == 'beam':
-                item_data["TYPE"] = 1
-                item_data["TY"] = ty
-                item_data["USE_HY"] = use_hy
-                if not use_hy:
-                    item_data["HY"] = hy
-            elif type.lower() == 'plate':
-                item_data["TYPE"] = 2
-            else:
-                raise ValueError("Element type for Gradient must be 'Beam' or 'Plate'.")
+                item_data = {
+                    "ID": current_id,
+                    "LCNAME": lcname,
+                    "GROUP_NAME": group,
+                    "TZ": tz,
+                    "USE_HZ": use_hz,
+                }
 
-            existing_temp = None
-            for temp in Temperature.Gradient.temps:
-                if temp.ELEMENT == element:
-                    existing_temp = temp
-                    break
+                if not use_hz:
+                    item_data["HZ"] = hz
 
-            if existing_temp:
-                if not hasattr(existing_temp, 'ITEMS'):
-                    existing_temp.ITEMS = []
-                existing_temp.ITEMS.append(item_data)
-            else:
-                self.ITEMS = [item_data]
-                Temperature.Gradient.temps.append(self)
+                if type.lower() == 'beam':
+                    item_data["TYPE"] = 1
+                    item_data["TY"] = ty
+                    item_data["USE_HY"] = use_hy
+                    if not use_hy:
+                        item_data["HY"] = hy
+                elif type.lower() == 'plate':
+                    item_data["TYPE"] = 2
+                else:
+                    raise ValueError("Element type for Gradient must be 'Beam' or 'Plate'.")
+
+                existing_temp = None
+                for temp in Temperature.Gradient.temps:
+                    if temp.ELEMENT == el:
+                        existing_temp = temp
+                        break
+
+                if existing_temp:
+                    if not hasattr(existing_temp, 'ITEMS'):
+                        existing_temp.ITEMS = []
+                    existing_temp.ITEMS.append(item_data)
+                    
+                    if i == 0:
+                        self.ELEMENT = el
+                        self.ID = current_id
+                        self.ITEMS = existing_temp.ITEMS
+                else:
+                    if i == 0:
+                        self.ELEMENT = el
+                        self.ID = current_id
+                        self.ITEMS = [item_data]
+                        Temperature.Gradient.temps.append(self)
+                    else:
+                        obj = self.__class__.__new__(self.__class__)
+                        obj.ELEMENT = el
+                        obj.ID = current_id
+                        obj.ITEMS = [item_data]
+                        Temperature.Gradient.temps.append(obj)
         
         @classmethod
         def json(cls):
@@ -405,16 +484,16 @@ class Temperature:
         Create Nodal Temperature  
         
         Parameters:
-            node (int): Node ID
+            node (int | list): Node ID or list of Node IDs
             temperature (float): Temperature value  
             lcname (str): Load case name **(Must exist in the model)**
             group (str): Load group name (default "")
             id (int): Temperature ID (optional)
         
         Example:
-            Temperature.Nodal(6, 10, "Test")
+            Temperature.Nodal([6, 7], 10, "Test")
         """
-        temps = []
+        temps:list[_Nodal] = []
         
         def __init__(self, node, temperature, lcname, group="", id=None):
 
@@ -434,38 +513,61 @@ class Temperature:
                 if chk == 0:
                     Group.Load(group)
             
-            self.NODE = node
-            self.TEMPER = temperature
-            self.LCNAME = lcname
-            self.GROUP_NAME = group
+            nodes = convList(node)
+            if not nodes:
+                return
             
-            if id is None:
-                existing_ids = []
-                for temp in Temperature.Nodal.temps:
-                    if temp.NODE == node:
-                        existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
-                self.ID = max(existing_ids, default=0) + 1
-            else:
-                self.ID = id
-            
-            existing_temp = None
-            for temp in Temperature.Nodal.temps:
-                if temp.NODE == node:
-                    existing_temp = temp
-                    break
-            
-            item_data = {
-                "ID": self.ID, "LCNAME": self.LCNAME,
-                "GROUP_NAME": self.GROUP_NAME, "TEMPER": self.TEMPER
-            }
+            for i, nd in enumerate(nodes):
+                if id is None:
+                    existing_ids = []
+                    for temp in Temperature.Nodal.temps:
+                        if temp.NODE == nd:
+                            existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
+                    current_id = max(existing_ids, default=0) + 1
+                else:
+                    current_id = id
+                
+                item_data = {
+                    "ID": current_id, "LCNAME": lcname,
+                    "GROUP_NAME": group, "TEMPER": temperature
+                }
 
-            if existing_temp:
-                if not hasattr(existing_temp, 'ITEMS'):
-                    existing_temp.ITEMS = []
-                existing_temp.ITEMS.append(item_data)
-            else:
-                self.ITEMS = [item_data]
-                Temperature.Nodal.temps.append(self)
+                existing_temp = None
+                for temp in Temperature.Nodal.temps:
+                    if temp.NODE == nd:
+                        existing_temp = temp
+                        break
+                
+                if existing_temp:
+                    if not hasattr(existing_temp, 'ITEMS'):
+                        existing_temp.ITEMS = []
+                    existing_temp.ITEMS.append(item_data)
+                    
+                    if i == 0:
+                        self.NODE = nd
+                        self.TEMPER = temperature
+                        self.LCNAME = lcname
+                        self.GROUP_NAME = group
+                        self.ID = current_id
+                        self.ITEMS = existing_temp.ITEMS
+                else:
+                    if i == 0:
+                        self.NODE = nd
+                        self.TEMPER = temperature
+                        self.LCNAME = lcname
+                        self.GROUP_NAME = group
+                        self.ID = current_id
+                        self.ITEMS = [item_data]
+                        Temperature.Nodal.temps.append(self)
+                    else:
+                        obj = self.__class__.__new__(self.__class__)
+                        obj.NODE = nd
+                        obj.TEMPER = temperature
+                        obj.LCNAME = lcname
+                        obj.GROUP_NAME = group
+                        obj.ID = current_id
+                        obj.ITEMS = [item_data]
+                        Temperature.Nodal.temps.append(obj)
 
         @classmethod
         def json(cls):
@@ -518,46 +620,144 @@ class Temperature:
     class BeamSection:
         """
         Create Beam Section Temperature Object in Python.
-        
+
         Parameters:
-            element (int): Element ID to apply the load.
-            lcname (str): Load Case Name (must exist in the model).
-            section_type (str, optional): 'General' or 'PSC'. Defaults to 'General'.
-            type (str, optional): 'Element' or 'Input'. Defaults to 'Element'.
-            group (str, optional): Load Group Name.
-            id (int, optional): Load ID.
-            dir (str, optional): Direction, 'LY' or 'LZ'. Defaults to 'LZ'.
-            ref_pos (str, optional): Reference Position, 'Centroid', 'Top', or 'Bot'. Defaults to 'Centroid'.
-            val_b (float, optional): B Value.
-            val_h1 (float, optional): H1 Value.
-            val_h2 (float, optional): H2 Value.
-            val_t1 (float, optional): T1 Value.
-            val_t2 (float, optional): T2 Value.
-            elast (float, optional): Modulus of Elasticity (required for 'Input' type).
-            thermal (float, optional): Thermal Coefficient (required for 'Input' type).
-            psc_ref (int, optional): Reference for PSC, 0 for Top, 1 for Bottom.
-            psc_opt_b (int, optional): B-Type option for PSC. (0 for Section type)
-            psc_opt_h1 (int, optional): H1-Type option for PSC. (0 - Z1 , 1- Z2 ,2 - Z2)
-            psc_opt_h2 (int, optional): H2-Type option for PSC.  (0 - Z1 , 1- Z2 ,2 - Z2)
+            element (int | list): Single Element ID or list of Element IDs.
+            lcname       (str)  : Load Case Name.
+            section_type (str)  : 'General' or 'PSC'. Default 'General'.
+            type         (str)  : 'Element' or 'Input'. Default 'Element'.
+            group        (str)  : Load Group Name.
+            dir          (str)  : 'LY' or 'LZ'. Default 'LZ'.
+            ref_pos      (str)  : 'Centroid', 'Top', or 'Bot'. 
+            b_value      (float): The `val_b` parameter. Default 0.
+            value (list of lists): [val_h1, val_h2, val_t1, val_t2] per entry.
+                                   PSC: val_h1/val_h2 accept 'Z1'/'Z2'/'Z3' or numeric.
+                                   Short row (3 vals): [val_h1, val_h2, val_t1] → padded.
+                                   Flat single entry auto-wrapped to [[...]].
+            elast        (float): Required for 'Input' type.
+            thermal      (float): Required for 'Input' type.
+            id           (int)  : Load ID (auto-assigned if None).
+
+        value examples:
+            General  : [[0.1, 0.2, 3.0, 12.4]]
+            PSC      : [["Z1", "Z2", 17.8, 4], [0.15, 0.4, 4, 0]]
+                    b_value=0 (Section), val_h1="Z1"→OPT_H1=0, val_h2="Z2"→OPT_H2=1
+            PSC num  : [[0.15, 0.4, 4, 0]]
+                    val_h1=0.15 (numeric) → OPT_H1=3 (Value), VAL_H1=0.15
+            Short    : [[0.1, 0.2, 5.0]]  →  [val_h1=0.1, val_h2=0.2, val_t1=5.0, val_t2=0]
         """
-        temps = []
+        temps:list[_BeamSection] = []
 
-        def __init__(self, element, lcname, section_type='General', type='Element', group="", 
-                    dir='LZ', ref_pos='Centroid', val_b=0, val_h1=0, val_h2=0, val_t1=0, val_t2=0,
-                    elast=None, thermal=None, psc_ref=0, psc_opt_b=1, psc_opt_h1=3, psc_opt_h2=3, id=None):
+        # ── Internal mappings ──────────────────────────────────────────────────────
+        _Z_MAP      = {"Z1": 0, "Z2": 1, "Z3": 2}   # Z-string → OPT_H int
+        _PSC_REF_MAP = {"TOP": 0, "BOT": 1}
 
-            # Validate required parameters for Input type
+        @staticmethod
+        def _resolve_h(val):
+            """
+            Resolve val_h1 or val_h2 for PSC:
+            - 'Z1'/'Z2'/'Z3'  →  (opt=0/1/2,  numeric_val=0)
+            - numeric          →  (opt=3,       numeric_val=val)
+            Returns (opt_int, numeric_val)
+            """
+            if isinstance(val, str):
+                opt = Temperature.BeamSection._Z_MAP.get(val.upper())
+                if opt is None:
+                    raise ValueError(f"Invalid Z-string '{val}'. Use 'Z1', 'Z2', or 'Z3'.")
+                return opt, 0
+            else:
+                return 3, val   # OPT=3 means "Value" type, pass the number directly
+
+        @staticmethod
+        def _normalize_value(value):
+            """
+            Normalise value input:
+            - flat list  [a,b,c,...]  →  [[a,b,c,...]]
+            - already list of lists   →  as-is
+            """
+            if value and not isinstance(value[0], (list, tuple)):
+                return [value]
+            return value
+
+        @staticmethod
+        def _pad_row(row, is_psc, b_value):
+            """
+            Allow short rows (3 values) by padding defaults:
+            3-value row: [val_h1, val_h2, val_t1]       → [b_value, val_h1, val_h2, val_t1, 0]
+            4-value row: [val_h1, val_h2, val_t1, val_t2]  → [b_value, val_h1, val_h2, val_t1, val_t2]
+            """
+            if len(row) == 3:
+                # user passed [val_h1, val_h2, val_t1]
+                return [b_value, row[0], row[1], row[2], 0]
+            elif len(row) == 4:
+                return [b_value, row[0], row[1], row[2], row[3]]
+            else:
+                raise ValueError(
+                    f"Each value entry must have 3 or 4 elements. Got {len(row)}: {row}"
+                )
+
+        def __init__(self, element, lcname,
+                    section_type:_BeamSectionSecType = 'General',
+                    type:_BeamSectionType         = 'Element',
+                    group        = "",
+                    dir:_BeamSectionDir          = 'LZ',
+                    ref_pos:_BeamSectionRefPos      = 'Centroid',
+                    b_value      = 0,
+                    value        = None,
+                    elast        = None,
+                    thermal      = None,
+                    id           = None,
+                    *,
+                    val_b=None, val_h1=None, val_h2=None, val_t1=None, val_t2=None,
+                    psc_ref=None, psc_opt_b=None, psc_opt_h1=None, psc_opt_h2=None):
+
+            # ── FORK COMPAT: midas_civil <= 1.6 keywords ─────────────────────────
+            # 1.7 replaced val_b / val_h1 / val_h2 / val_t1 / val_t2 with
+            # b_value + value=[[h1, h2, t1, t2]].  The old keywords still work for
+            # General sections and produce the identical /db/btmp payload, so
+            # scripts written against 1.6 run unchanged.  The PSC options cannot
+            # be mapped one-to-one (1.7 derives REF from ref_pos), so they raise.
+            _legacy = (val_b, val_h1, val_h2, val_t1, val_t2)
+            _legacy_psc = (psc_ref, psc_opt_b, psc_opt_h1, psc_opt_h2)
+            if any(v is not None for v in _legacy + _legacy_psc):
+                if value is not None:
+                    raise TypeError("Temperature.BeamSection: pass either value= or the legacy "
+                                    "val_* keywords, not both.")
+                if section_type.lower() == 'psc' or any(v is not None for v in _legacy_psc):
+                    raise TypeError("Temperature.BeamSection: the legacy val_*/psc_* keywords are only "
+                                    "supported for section_type='General'; for PSC use b_value= and "
+                                    "value=[[h1, h2, t1, t2], ...].")
+                b_value = 0 if val_b is None else val_b
+                value = [[0 if v is None else v for v in (val_h1, val_h2, val_t1, val_t2)]]
+
+            # ── Defaults ──────────────────────────────────────────────────────────
+            if value is None:
+                value = [[0, 0, 0, 0]]
+
+            # ── Normalise & pad ───────────────────────────────────────────────────
+            is_psc   = section_type.lower() == 'psc'
+            value    = self._normalize_value(value)
+            value    = [self._pad_row(row, is_psc, b_value) for row in value]
+
+            # ── Validate Input type ───────────────────────────────────────────────
             if type.upper() == 'INPUT':
                 if elast is None or thermal is None:
-                    raise ValueError("For 'Input' type, both 'elast' and 'thermal' parameters are required.")
+                    raise ValueError(
+                        "For 'Input' type, both 'elast' and 'thermal' must be provided."
+                    )
 
-            # Handle load group creation
+            # ── Map ref_pos string → int for PSC ──────────────────────────────────
+            psc_ref_int = self._PSC_REF_MAP.get(str(ref_pos).upper(), 0)
 
+            # ── Load Case ─────────────────────────────────────────────────────────
             chk = 0
             for i in Load_Case.cases:
-                if lcname in i.NAME: chk = 1
-            if chk == 0: Load_Case("T", lcname)
-            
+                if lcname in i.NAME:
+                    chk = 1
+            if chk == 0:
+                Load_Case("T", lcname)
+
+            # ── Load Group ────────────────────────────────────────────────────────
             if group:
                 chk = 0
                 try:
@@ -568,73 +768,117 @@ class Temperature:
                     pass
                 if chk == 0:
                     Group.Load(group)
-            
-            self.ELEMENT = element
 
-            # Auto-assign ID if not provided
-            if id is None:
-                existing_ids = []
+            # ── Build vSECTTMP list ───────────────────────────────────────────────
+            vsect_tmp_list = []
+
+            for row in value:
+                val_b, val_h1, val_h2, val_t1, val_t2 = row
+
+                vsec_item = {"TYPE": type.upper()}
+
+                # ELAST / THERMAL — always include when provided (even for ELEMENT type)
+                if elast is not None:
+                    vsec_item["ELAST"]   = elast
+                if thermal is not None:
+                    vsec_item["THERMAL"] = thermal
+
+                # PSC-specific fields
+                if is_psc:
+                    vsec_item["REF"] = psc_ref_int
+
+                    # val_b → OPT_B (0=Section, 1=Value)
+                    vsec_item["OPT_B"]  = int(val_b)
+                    vsec_item["VAL_B"]  = 0          # VAL_B always 0 when OPT_B=0(Section)
+
+                    # val_h1 → OPT_H1 + VAL_H1
+                    opt_h1, num_h1 = self._resolve_h(val_h1)
+                    vsec_item["OPT_H1"] = opt_h1
+                    vsec_item["VAL_H1"] = num_h1
+
+                    # val_h2 → OPT_H2 + VAL_H2
+                    opt_h2, num_h2 = self._resolve_h(val_h2)
+                    vsec_item["OPT_H2"] = opt_h2
+                    vsec_item["VAL_H2"] = num_h2
+
+                    vsec_item["VAL_T1"] = val_t1
+                    vsec_item["VAL_T2"] = val_t2
+
+                else:
+                    # General section — straight values
+                    vsec_item["VAL_B"]  = val_b
+                    vsec_item["VAL_H1"] = val_h1
+                    vsec_item["VAL_H2"] = val_h2
+                    vsec_item["VAL_T1"] = val_t1
+                    vsec_item["VAL_T2"] = val_t2
+
+                vsect_tmp_list.append(vsec_item)
+
+            # ── Handle Elements (int or list) and Auto-assign ID ──────────────────
+            elements = convList(element)
+            
+            if not elements:
+                return
+
+            for i, el in enumerate(elements):
+                if id is None:
+                    existing_ids = []
+                    for temp in Temperature.BeamSection.temps:
+                        if temp.ELEMENT == el:
+                            existing_ids.extend(
+                                [item.get('ID', 0) for item in temp.ITEMS
+                                if hasattr(temp, 'ITEMS')]
+                            )
+                    current_id = max(existing_ids, default=0) + 1
+                else:
+                    current_id = id
+
+                # ── Construct item dict ───────────────────────────────────────────────
+                item_data = {
+                    "ID":         current_id,
+                    "LCNAME":     lcname,
+                    "GROUP_NAME": group,
+                    "DIR":        dir,
+                    "REF":        ref_pos,
+                    "NUM":        len(vsect_tmp_list),
+                    "bPSC":       is_psc,
+                    "vSECTTMP":   vsect_tmp_list
+                }
+
+                # ── Merge or create ───────────────────────────────────────────────────
+                existing_temp = None
                 for temp in Temperature.BeamSection.temps:
-                    if temp.ELEMENT == element:
-                        existing_ids.extend([item.get('ID', 0) for item in temp.ITEMS if hasattr(temp, 'ITEMS')])
-                self.ID = max(existing_ids, default=0) + 1
-            else:
-                self.ID = id
-            
-            # Construct the nested dictionary for vSECTTMP
-            vsec_item = {
-                "TYPE": type.upper(),
-                "VAL_B": val_b,
-                "VAL_H1": val_h1,
-                "VAL_H2": val_h2,
-                "VAL_T1": val_t1,
-                "VAL_T2": val_t2,
-            }
+                    if temp.ELEMENT == el:
+                        existing_temp = temp
+                        break
 
-            is_psc = section_type.lower() == 'psc'
-            
-            # Add material properties for Input type
-            if type.upper() == 'INPUT':
-                vsec_item["ELAST"] = elast
-                vsec_item["THERMAL"] = thermal
-            
-            # Add PSC-specific parameters
-            if is_psc:
-                vsec_item["REF"] = psc_ref
-                vsec_item["OPT_B"] = psc_opt_b
-                vsec_item["OPT_H1"] = psc_opt_h1
-                vsec_item["OPT_H2"] = psc_opt_h2
+                if existing_temp:
+                    if not hasattr(existing_temp, 'ITEMS'):
+                        existing_temp.ITEMS = []
+                    existing_temp.ITEMS.append(item_data)
+                    
+                    if i == 0:
+                        self.ELEMENT = el
+                        self.ID = current_id
+                        self.ITEMS = existing_temp.ITEMS
+                else:
+                    if i == 0:
+                        # Use the current self context for the first element
+                        self.ELEMENT = el
+                        self.ID = current_id
+                        self.ITEMS = [item_data]
+                        Temperature.BeamSection.temps.append(self)
+                    else:
+                        # Create an identical object instance for extra elements in list
+                        obj = self.__class__.__new__(self.__class__)
+                        obj.ELEMENT = el
+                        obj.ID = current_id
+                        obj.ITEMS = [item_data]
+                        Temperature.BeamSection.temps.append(obj)
 
-            # Construct the main item dictionary
-            item_data = {
-                "ID": self.ID,
-                "LCNAME": lcname,
-                "GROUP_NAME": group,
-                "DIR": dir,
-                "REF": ref_pos,
-                "NUM": 1,
-                "bPSC": is_psc,
-                "vSECTTMP": [vsec_item]
-            }
-
-            # Check if an object for this element already exists
-            existing_temp = None
-            for temp in Temperature.BeamSection.temps:
-                if temp.ELEMENT == element:
-                    existing_temp = temp
-                    break
-
-            if existing_temp:
-                if not hasattr(existing_temp, 'ITEMS'):
-                    existing_temp.ITEMS = []
-                existing_temp.ITEMS.append(item_data)
-            else:
-                self.ITEMS = [item_data]
-                Temperature.BeamSection.temps.append(self)
-        
+        # ── Class / static methods (unchanged) ───────────────────────────────────
         @classmethod
         def json(cls):
-            """Creates JSON from Beam Section Temperature objects defined in Python"""
             json_data = {"Assign": {}}
             for temp in cls.temps:
                 json_data["Assign"][str(temp.ELEMENT)] = {"ITEMS": temp.ITEMS}
@@ -642,36 +886,29 @@ class Temperature:
 
         @staticmethod
         def create():
-            """Creates Beam Section Temperatures in MIDAS Civil NX"""
             MidasAPI("PUT", "/db/btmp", Temperature.BeamSection.json())
 
         @staticmethod
         def get():
-            """Get the JSON of Beam Section Temperatures from MIDAS Civil NX"""
             return MidasAPI("GET", "/db/btmp")
 
         @staticmethod
         def sync():
-            """Sync Beam Section Temperatures from MIDAS Civil NX to Python"""
             Temperature.BeamSection.temps = []
             a = Temperature.BeamSection.get()
-            
             if a and 'BTMP' in a:
-                temp_data = a.get('BTMP', {})
-                for element_id, element_data in temp_data.items():
-                    element_obj = type('obj', (object,), {
+                for element_id, element_data in a['BTMP'].items():
+                    obj = type('obj', (object,), {
                         'ELEMENT': int(element_id),
-                        'ITEMS': element_data.get('ITEMS', [])
+                        'ITEMS':   element_data.get('ITEMS', [])
                     })()
-                    Temperature.BeamSection.temps.append(element_obj)
+                    Temperature.BeamSection.temps.append(obj)
 
         @staticmethod
         def delete():
-            """Delete Beam Section Temperatures from MIDAS Civil NX and Python"""
             Temperature.BeamSection.clear()
             return MidasAPI("DELETE", "/db/btmp")
-        
+
         @staticmethod
         def clear():
-            """Delete Beam Section Temperatures from MIDAS Civil NX and Python"""
             Temperature.BeamSection.temps = []

@@ -1,4 +1,4 @@
-from ._mapi import MidasAPI,NX
+from ._mapi import MidasAPI,NX,MAPI_KEY,MAPI_BASEURL
 from colorama import Fore,Style
 import numpy as np
 import math
@@ -18,11 +18,15 @@ from ._movingload import MovingLoad
 
 from ._temperature import Temperature
 from ._construction import CS
+from._analysiscontrol import AnalysisControl
+from ._responseSpectrum import RS
+from ._heat_of_hydration import HoH
 
 from ._view import View
 
 from collections import defaultdict
 from typing import Literal
+
 
 _forceUnit = Literal["KN", "N", "KGF", "TONF", "LBF", "KIPS"]
 _lengthUnit = Literal["M", "CM", "MM", "FT", "IN"]
@@ -46,11 +50,116 @@ _SelectOutput = Literal['NODE_ID','NODE','ELEM_ID','ELEM']
 _SelectOutputElem = Literal['ELEM_ID','ELEM']
 _getSelectOutput = Literal['ELEM_ID','NODE_ID']
 
+
+def _returnCommonGrid_(gridStr:set,x1,x2,y1,y2,z1,z2):
+
+    n_total_methodA = int(1+x2-x1)*int(1+y2-y1)*int(1+z2-z1)
+    n_total_methodB = len(gridStr)
+
+    # print(" TOTAL GRIDS IN MODEL = ",n_total_methodB , "   |   GRID COMBINATION POSSIBLE = ",n_total_methodA)
+    
+
+    if n_total_methodA < n_total_methodB:
+        # print("Brute Force selected | All combination is checked")
+
+    # ----------- OLD APPROACH -------------
+
+        possible_gridStr = set()
+        for i in np.arange(int(x1),int(x2)+1,1):
+            for j in np.arange(int(y1),int(y2)+1,1):
+                for k in np.arange(int(z1),int(z2)+1,1):
+                    possible_gridStr.add(f"{i},{j},{k}")
+        
+        common_gridStr = list(gridStr.intersection(possible_gridStr))
+        return common_gridStr
+
+    # -------------- NEW APPROACH ----------
+    else:
+        # print("Checking model grids only...")
+
+        possible_gridStr = []
+
+        for gridSt in gridStr:
+            x,y,z = map(int,gridSt.split(","))
+            if x1 <= x <= x2 and y1 <= y <= y2 and z1 <= z <= z2 :
+                possible_gridStr.append(gridSt)
+
+        common_gridStr = list(gridStr.intersection(set(possible_gridStr)))
+
+        return common_gridStr
+
+    
+
 class Model:
+
+    # NAME = 'UNTITLED'
+    # SAVE_LOC = ''
+
+    # _DATA = {}
+    # _DATA[NAME] = {'NODE':Node}
+
+    # def __init__(self,name:str,folder:str=None,mapiKey:str=None,baseURL:str=None):
+    #     Model.clear()
+    #     if name not in Model._DATA:
+    #         # CREATE A NEW MODEL DATA ----------------------------
+    #         Model._DATA[name] = {
+    #                     'MAPIKEY' : str(mapiKey) if mapiKey else str(MAPI_KEY.data) ,
+    #                     'BASEURL' : str(baseURL) if baseURL else str(MAPI_BASEURL.baseURL) ,
+    #                     'PATH' : f'{folder}\\{name}.mcb'  ,
+    #                     'NODE': {'OBJ':None,'IDS':None,'MAXID':None,'GRID':None,'DIC':None} , 
+    #                     'ELEM': {'OBJ':None,'IDS':None,'MAXID':None,'GRID':None,'DIC':None} ,
+    #             }
+            
+
+    #     else:
+    #         # RETRIEVE OLD DATA ------------------------------------
+    #         # NODE -------------------------------------------------
+
+    #         Node.nodes = Model._DATA[name]['NODE']['OBJ']
+    #         Node.ids = Model._DATA[name]['NODE']['IDS']
+    #         Node.maxID = Model._DATA[name]['NODE']['MAXID']
+    #         Node.Grid = Model._DATA[name]['NODE']['GRID']
+    #         Node.__nodeDic__ = Model._DATA[name]['NODE']['DIC']
+
+    #         # ELEMENT ----------------------------------------------
+
+    #         Element.elements = Model._DATA[name]['ELEM']['OBJ']
+    #         Element.ids = Model._DATA[name]['ELEM']['IDS']
+    #         Element.maxID = Model._DATA[name]['ELEM']['MAXID']
+    #         Element.__elemDIC__  = Model._DATA[name]['ELEM']['DIC']
+    #         Element.Grid  = Model._DATA[name]['ELEM']['GRID']
+
+    #     Model.NAME = name
+    
+    # @staticmethod
+    # def SSYNCC(bModelDATA=False):
+    #     ''' Stores current data into particular model'''
+    #     name = Model.NAME
+
+    #     if bModelDATA: 
+    #         MAPI_KEY.data = Model._DATA[name]['MAPIKEY']
+    #         MAPI_BASEURL.baseURL = Model._DATA[name]['BASEURL']
+    #         Model.SAVE_LOC = Model._DATA[name]['PATH']
+
+
+    #     Model._DATA[name]['NODE']['OBJ'] = Node.nodes
+    #     Model._DATA[name]['NODE']['IDS'] = Node.ids
+    #     Model._DATA[name]['NODE']['MAXID'] = Node.maxID
+    #     Model._DATA[name]['NODE']['GRID'] = Node.Grid
+    #     Model._DATA[name]['NODE']['DIC'] = Node.__nodeDic__
+
+    #     Model._DATA[name]['ELEM']['OBJ'] = Element.elements
+    #     Model._DATA[name]['ELEM']['IDS'] = Element.ids
+    #     Model._DATA[name]['ELEM']['MAXID'] = Element.maxID
+    #     Model._DATA[name]['ELEM']['DIC'] = Element.__elemDIC__
+    #     Model._DATA[name]['ELEM']['GRID'] = Element.Grid
+
 
     @staticmethod
     def gravity():
         g_SI = 9.806
+        if NX._isSyncUnit == False:
+            Model.syncUnits()
 
         len_unit =NX.units['DIST']
         len_multi = {
@@ -173,6 +282,13 @@ class Model:
         \nheat --> CAL, KCAL, J, KJ, BTU ||  
         \ntemp --> C, F
         \nDefault --> KN, M, BTU, C"""
+
+        if isinstance(force,dict):
+            length = force['DIST']
+            heat = force['HEAT']
+            temp = force['TEMPER']
+            force = force['FORCE']
+
         if temp not in ["C","F"]:
             temp="C"
         if force not in ["KN", "N", "KGF", "TONF", "LBF", "KIPS"]:
@@ -181,6 +297,8 @@ class Model:
             length = "M"
         if heat not in ["CAL", "KCAL", "J", "KJ", "BTU"]:
             heat = "BTU"
+
+
         unit={"Assign":{
             1:{
                 "FORCE":force,
@@ -189,6 +307,7 @@ class Model:
                 "TEMPER":temp
             }
         }}
+
         NX.units = {
                 "FORCE":force,
                 "DIST":length,
@@ -196,7 +315,23 @@ class Model:
                 "TEMPER":temp
             }
         MidasAPI("PUT","/db/UNIT",unit)
+        NX._isSyncUnit = True
+        return NX.units
 
+
+    @staticmethod
+    def getUnits():
+        resp = MidasAPI("GET","/db/UNIT")['UNIT']['1']
+        # js = {'FORCE':resp['FORCE'],'DIST':resp['DIST'],'HEAT':resp['HEAT'],'TEMPER':resp['TEMPER']}
+        return resp
+    
+    @staticmethod
+    def syncUnits():
+        resp = MidasAPI("GET","/db/UNIT")['UNIT']['1']
+        # js = {'FORCE':resp['FORCE'],'DIST':resp['DIST'],'HEAT':resp['HEAT'],'TEMPER':resp['TEMPER']}
+        NX.units = resp
+        NX._isSyncUnit = True
+        return NX.units
 
     @staticmethod
     def maxID(dbNAME:_dbNames = 'NODE' , fast:bool=False) -> int :
@@ -232,8 +367,12 @@ class Model:
     @staticmethod
     def create():
         """Create Material, Section, Node, Elements, Groups and Boundary."""
+        
+        # if bSync: Model.SSYNCC(bModelDATA=bModelMAPI)
+
+        
         from tqdm import tqdm
-        pbar = tqdm(total=15,desc="Creating Model...")
+        pbar = tqdm(total=16,desc="Creating Model...")
 
         if Material.mats!=[]: Material.create()
         pbar.update(1)
@@ -260,6 +399,7 @@ class Model:
         Group.create()
         pbar.update(1)
         pbar.set_description_str("Creating Boundary...")
+        if Element.StiffnessScaleFactor.data: Element.StiffnessScaleFactor.create()
         Boundary.create()
         pbar.update(1)
         pbar.set_description_str("Creating Load...")
@@ -276,11 +416,18 @@ class Model:
         pbar.update(1)
         pbar.set_description_str("Creating Moving Load...")
         MovingLoad.create()
+        # PLACING EIGEN VALUE CONTROL
+        if 'Eigen' in AnalysisControl._Controls: AnalysisControl._Controls["Eigen"]._execute()
+        RS.Function.create()
+        RS.Case.create()
+        pbar.update(1)
+        HoH.create()
         pbar.update(1)
         pbar.set_description_str("Creating Load Combination...")
         LoadCombination.create()
         pbar.update(1)
         pbar.set_description_str(Fore.GREEN+"Model creation complete"+Style.RESET_ALL)
+        
         
     @staticmethod
     def clear():
@@ -297,6 +444,8 @@ class Model:
         Tendon.clear()
         Section.TaperedGroup.clear()
         LoadCombination.clear()
+        CS.clear()
+        MovingLoad.clear()
         
 
     @staticmethod
@@ -349,24 +498,24 @@ class Model:
         if location=="":
             MidasAPI("POST","/doc/SAVE",{"Argument":{}})
         else:
-            if location.endswith('.mcb') or location.endswith('.mcbz'):
+            if location.endswith(('.mcb','.mcbz','.mgb','.mgbx')):
                 MidasAPI("POST","/doc/SAVEAS",{"Argument":str(location)})#Dumy location
             else:
                 print('⚠️  File extension is missing')
                 
     @staticmethod
-    def saveAs(location=""):
+    def saveAs(location):
         """Saves the model at location provided   
          Model.saveAs("D:\\model2.mcb")"""
-        if location.endswith('.mcb') or location.endswith('.mcbz'):
+        if location.endswith(('.mcb','.mcbz','.mgb','.mgbx')):
             MidasAPI("POST","/doc/SAVEAS",{"Argument":str(location)})
         else:
             print('⚠️  File extension is missing')
     
     @staticmethod
-    def open(location=""):
+    def open(location):
         """Open Civil NX model file \n Model.open("D:\\model.mcb")"""
-        if location.endswith('.mcb') or location.endswith('.mcbz'):
+        if location.endswith(('.mcb','.mcbz','.mgb','.mgbx')):
             MidasAPI("POST","/doc/OPEN",{"Argument":str(location)})
         else:
             print('⚠️  File extension is missing')
@@ -385,7 +534,7 @@ class Model:
     @staticmethod
     def saveStageAs(stageName="",filePath=""):
         """Save Construction Stage as separate model"""
-        if filePath.endswith('.mcb') or filePath.endswith('.mcbz'):
+        if filePath.endswith(('.mcb','.mcbz','.mgb','.mgbx')):
             MidasAPI("POST","/doc/STAGAS",{"Argument":{"EXPORT_PATH":str(filePath), "STAGE_STEP":str(stageName)}})
         else:
             print('⚠️  File extension is missing')
@@ -398,7 +547,7 @@ class Model:
         js = {"Assign": {
               "1":{}}}
         
-        if project_name+revision+user+title=="":
+        if project_name+revision+user+title+comment=="":
             return MidasAPI("GET","/db/PJCF",{})
         else:
             if project_name!="":
@@ -471,24 +620,114 @@ class Model:
         node_connectivity = dict(node_connectivity)
         return node_connectivity
 
+    # @staticmethod
+    # def visualise():
+    #     if NX.visualiser:
+    #         try:
+    #             from ._visualise import displayWindow
+    #             displayWindow()
+    #         except:
+    #             pass
+
+    # @staticmethod
+    # def snap():
+    #     if NX.visualiser:
+    #         try:
+    #             from ._visualise import take_snapshot
+    #             take_snapshot()
+    #         except:
+    #             pass
+
+    # @staticmethod
+    # def stFigure(bGrid=True,bSupport=True,bPointSpring=False,bElink=False, bRigidLink=False,bNode=False,bNodeID=False,bElementID=True):
+    #     # if NX.visualiser:
+    #     try:
+    #         from ._visualise import stVisual
+    #         return stVisual(bGrid,bSupport,bPointSpring,bElink, bRigidLink,bNode,bNodeID,bElementID)
+    #     except:
+    #         print("   ⚠️   ERROR OCCURED WHILE GENERATING PLOTLY STRUCTURE ...")
+    #         return None
+
+
+    # @staticmethod
+    # def visualise():
+    #     try:
+    #         from ._visualise import stVisual
+    #         stVisual(True,True,True,True,True,True,True,True).show()
+    #     except:
+    #         print("   ⚠️   ERROR OCCURED WHILE GENERATING PLOTLY STRUCTURE ...")
+    #         return None
+        
     @staticmethod
-    def visualise():
-        if NX.visualiser:
-            try:
-                from ._visualise import displayWindow
-                displayWindow()
-            except:
-                pass
+    def visualise(id=None,bGrid=True,bNode=True,bNodeID=False,bElementID=False,bSupport=True,bPointSpring=True,bElink=True, bRigidLink=True):
+        '''Shows the model as a 3D plotly graph in browser '''
+        from ._visualise import _visualise,Snap
+        # _visualise(_snapshot(),bGrid,bSupport,bPointSpring,bElink,bRigidLink,bNode,bNodeID,bElementID).show()
+        # Snap()
+        if id is None:
+
+            Snap()
+            _visualise(Snap.snapshots[Snap.n_snap].SNAP_DATA,bGrid,bNode,bNodeID,bElementID,bSupport,bPointSpring,bElink,bRigidLink).show()
+
+
+        else:
+            _visualise(Snap.snapshots[id].SNAP_DATA,bGrid,bNode,bNodeID,bElementID,bSupport,bPointSpring,bElink,bRigidLink).show()
+
+        
 
     @staticmethod
-    def snap():
-        if NX.visualiser:
-            try:
-                from ._visualise import take_snapshot
-                take_snapshot()
-            except:
-                pass
+    def goFigure(id=None,bGrid=True,bNode=True,bNodeID=True,bElementID=True,bSupport=True,bPointSpring=True,bElink=True, bRigidLink=True):
+        '''Return a Plotly GO figure object'''
+        from ._visualise import _visualise,Snap
+        if id is None:
+            Snap()
+            return _visualise(Snap.snapshots[Snap.n_snap].SNAP_DATA,bGrid,bNode,bNodeID,bElementID,bSupport,bPointSpring,bElink,bRigidLink)
+        else:
 
+            return _visualise(Snap.snapshots[id].SNAP_DATA,bGrid,bNode,bNodeID,bElementID,bSupport,bPointSpring,bElink,bRigidLink)
+
+        
+    @staticmethod
+    def snap(name=None):
+        """
+        Takes a snapshot of the current model state and stores it in memory.
+        """
+        try:
+            from ._visualise import Snap
+            Snap(name)
+            return True
+        except:
+            print("   ⚠️   ERROR OCCURRED WHILE TAKING SNAPSHOT ...")
+            return None
+    
+
+    # @staticmethod
+    # def getSnap(ID=None):
+    #     """Retrieves a specific snapshot by ID. If no ID is passed, returns the latest snapshot."""
+    #     try:
+    #         from ._visualise import _Snap
+    #         return _Snap.get(ID)
+    #     except:
+    #         print("   ⚠️   ERROR OCCURRED WHILE RETRIEVING SNAPSHOT ...")
+    #         return None
+
+    # @staticmethod
+    # def clearSnaps():
+    #     """Clears all stored snapshots."""
+    #     try:
+    #         from ._visualise import _Snap
+    #         _Snap.clear()
+    #     except:
+    #         pass
+
+    @staticmethod
+    def listSnapIDs():
+        """Returns a list of all available snapshot IDs."""
+        try:
+            from ._visualise import Snap
+            return Snap.ListIDs()
+        except:
+            return []
 
 
 
@@ -527,13 +766,7 @@ class Model:
                 gridStr = set(Node.Grid.keys())
                 grid_complete = Node.Grid
             
-            possible_gridStr = set()
-            for i in np.arange(int(x1),int(x2)+1,1):
-                for j in np.arange(int(y1),int(y2)+1,1):
-                    for k in np.arange(int(z1),int(z2)+1,1):
-                        possible_gridStr.add(f"{i},{j},{k}")
-            
-            common_gridStr = list(gridStr.intersection(possible_gridStr))
+            common_gridStr = _returnCommonGrid_(gridStr,x1,x2,y1,y2,z1,z2)
 
             for eachAvailGrid in common_gridStr:
                 for elm in grid_complete[eachAvailGrid]:
@@ -591,13 +824,9 @@ class Model:
                 gridStr = set(Node.Grid.keys())
                 grid_complete = Node.Grid
             
-            possible_gridStr = set()
-            for i in np.arange(int(x1),int(x2)+1,1):
-                for j in np.arange(int(y1),int(y2)+1,1):
-                    for k in np.arange(int(z1),int(z2)+1,1):
-                        possible_gridStr.add(f"{i},{j},{k}")
-            
-            common_gridStr = list(gridStr.intersection(possible_gridStr))
+            common_gridStr = _returnCommonGrid_(gridStr,x1,x2,y1,y2,z1,z2)
+
+
             for eachAvailGrid in common_gridStr:
                 for elm in grid_complete[eachAvailGrid]:
                     point = elm.CENTER if bELEM else elm.LOC
@@ -655,13 +884,10 @@ class Model:
                 grid_complete = Node.Grid
             
 
-            possible_gridStr = set()
-            for i in np.arange(int(x1),int(x2)+1,1):
-                for j in np.arange(int(y1),int(y2)+1,1):
-                    for k in np.arange(int(z1),int(z2)+1,1):
-                        possible_gridStr.add(f"{i},{j},{k}")
-            
-            common_gridStr = list(gridStr.intersection(possible_gridStr))
+
+            common_gridStr = _returnCommonGrid_(gridStr,x1,x2,y1,y2,z1,z2)
+
+
 
             for eachAvailGrid in common_gridStr:
                 for elm in grid_complete[eachAvailGrid]:
@@ -717,13 +943,7 @@ class Model:
                 grid_complete = Node.Grid
             
 
-            possible_gridStr = set()
-            for i in np.arange(int(x1),int(x2)+1,1):
-                for j in np.arange(int(y1),int(y2)+1,1):
-                    for k in np.arange(int(z1),int(z2)+1,1):
-                        possible_gridStr.add(f"{i},{j},{k}")
-            
-            common_gridStr = list(gridStr.intersection(possible_gridStr))
+            common_gridStr = _returnCommonGrid_(gridStr,x1,x2,y1,y2,z1,z2)
 
             for eachAvailGrid in common_gridStr:
                 for elm in grid_complete[eachAvailGrid]:
@@ -800,12 +1020,137 @@ class Model:
             return output_list
 
 
+        # -------- POLYGON SELECT METHOD --------
+        @staticmethod
+        def __point_in_polygon(px:float, py:float, poly:list, tol:float=0.001) -> bool:
+            """
+            Even-odd ray-casting test, INCLUSIVE of the boundary.
+            Returns True if (px,py) is inside the polygon OR within `tol` of any edge.
+            `poly` is a list of (u, v) vertices (not required to be closed).
+            """
+            n = len(poly)
+            tol2 = tol * tol
+
+            # --- boundary test: on/near any edge counts as inside
+            j = n - 1
+            for i in range(n):
+                ui, vi = poly[i]
+                uj, vj = poly[j]
+                du, dv = uj - ui, vj - vi
+                seg2 = du * du + dv * dv
+                if seg2 == 0:                       # degenerate edge = a single point
+                    if (px - ui) ** 2 + (py - vi) ** 2 <= tol2:
+                        return True
+                else:
+                    t = ((px - ui) * du + (py - vi) * dv) / seg2
+                    t = max(0.0, min(1.0, t))       # clamp to the segment
+                    cu, cv = ui + t * du, vi + t * dv
+                    if (px - cu) ** 2 + (py - cv) ** 2 <= tol2:
+                        return True
+                j = i
+
+            # --- interior test: standard even-odd ray casting
+            inside = False
+            j = n - 1
+            for i in range(n):
+                ui, vi = poly[i]
+                uj, vj = poly[j]
+                if ((vi > py) != (vj > py)) and \
+                (px < (uj - ui) * (py - vi) / (vj - vi) + ui):
+                    inside = not inside
+                j = i
+
+            return inside
+        
+        @staticmethod
+        def Polygon(points:list,
+                    output:_SelectOutput='NODE_ID') -> set:
+            """
+            Select nodes/elements whose in-plane projection falls inside a polygon.
+
+            points    : ordered list of boundary vertices, e.g. [(x,y,z), (x,y,z), ...]
+                        (does not need to be closed; the last->first edge is implied)
+            plane_tol : half-thickness of the out-of-plane band a point must lie within
+            """
+            plane_tol = 0.001
+            output_list = []
+            # --- bounding box of the polygon over ALL 3 axes (for grid pre-filtering)
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            zs = [p[2] for p in points]
+
+            x1, x2 = min(xs) - plane_tol, max(xs) + plane_tol
+            y1, y2 = min(ys) - plane_tol, max(ys) + plane_tol
+            z1, z2 = min(zs) - plane_tol, max(zs) + plane_tol
+
+
+            # --- axis bookkeeping: which two indices are "in plane", which is "out"
+
+            # FINDING THE PLANE
+            xdif = x2-x1
+            ydif = y2-y1
+            zdif = z2-z1
+
+            if xdif < min(ydif,ydif):
+                plane = 'YZ'
+            elif ydif < min(xdif,zdif):
+                plane = 'XZ'
+            else:
+                plane = 'XY'
+
+            axes = {'XY': (0, 1, 2), 'YZ': (1, 2, 0), 'XZ': (0, 2, 1)}
+
+
+            a, b, c = axes[plane]            # a,b -> in-plane ; c -> out-of-plane
+
+
+            # 2D polygon in the chosen plane
+            poly = [(p[a], p[b]) for p in points]
+
+            # out-of-plane band the points must sit inside
+            c_vals = [p[c] for p in points]
+            c1, c2 = min(c_vals) - plane_tol, max(c_vals) + plane_tol
+
+            # --- output-mode selection (identical to Box)
+            bELEM = False
+            bID   = True
+            if output == 'ELEM_ID':
+                gridStr = set(Element.Grid.keys()); grid_complete = Element.Grid
+                bELEM, bID = True, True
+            elif output == 'ELEM':
+                gridStr = set(Element.Grid.keys()); grid_complete = Element.Grid
+                bELEM, bID = True, False
+            elif output == 'NODE':
+                gridStr = set(Node.Grid.keys()); grid_complete = Node.Grid
+                bID = False
+            else:
+                gridStr = set(Node.Grid.keys()); grid_complete = Node.Grid
+
+            common_gridStr = _returnCommonGrid_(gridStr,x1,x2,y1,y2,z1,z2)
+
+            # --- exact test on the candidates
+            for eachAvailGrid in common_gridStr:
+                for elm in grid_complete[eachAvailGrid]:
+                    point = elm.CENTER if bELEM else elm.LOC
+
+                    # must lie within the out-of-plane band...
+                    if not (c1 <= point[c] <= c2):
+                        continue
+                    # ...and inside the polygon in-plane
+                    if Model.Select.__point_in_polygon(point[a], point[b], poly):
+                        output_list.append(elm.ID if bID else elm)
+
+            return set(output_list)
+
+
+
+
     @staticmethod
-    def IMAGE(location:str='',image_size:tuple = None , view:str='pre',CS_StageName:str='',_boutputImage:bool=True):
+    def IMAGE(location:str='',image_size:tuple = None , view:str='pre',CS_StageName:str='',bOutputImage:bool=True):
         ''' 
         Capture the image in the viewport
             Location - image location
-            Image Size =  height and width of image captured
+            Image Size =  width and height of image captured
             View - 'pre' or 'post'
             stage - CS name
         '''
@@ -836,17 +1181,59 @@ class Model:
 
         resp = MidasAPI('POST','/view/CAPTURE',json_body)
 
-        bs64_img = b64decode(resp["base64String"])
-        if location:
-            __img_file = open(location, 'wb')  # Open image file to save.
-            __img_file.write(bs64_img)  # Decode and write data.
-            __img_file.close()
+        if 'base64String' in resp:
+            bs64_img = b64decode(resp["base64String"])
+            if location:
+                __img_file = open(location, 'wb')  # Open image file to save.
+                __img_file.write(bs64_img)  # Decode and write data.
+                __img_file.close()
 
-        if _boutputImage:
-            from PIL import Image as ImagePIL
-            from io import BytesIO
-            # return bs64_img
-            return ImagePIL.open(BytesIO(bs64_img))
+            if bOutputImage:
+                from PIL import Image as ImagePIL
+                from io import BytesIO
+                # return bs64_img
+                return ImagePIL.open(BytesIO(bs64_img))
+        
+        else:
+            try:
+                _ERROR_MSG = resp['error']['message']
+            except:
+                _ERROR_MSG = "CANNOT RETRIEVE IMAGE. ERROR UNKNOWN"
+
+            
+            from PIL import Image, ImageDraw, ImageFont
+            image = Image.new("RGB", image_size, "white")
+            draw = ImageDraw.Draw(image)
+
+            font = ImageFont.load_default()
+
+
+            # Get text bounding box for centering
+            bbox = draw.textbbox((0, 0), _ERROR_MSG, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+
+            # Calculate centered position
+            x = (image_size[0] - text_width) // 2
+            y = (image_size[1] - text_height) // 2
+
+            # Draw the text in black
+            draw.text((x, y-15), "ERROR", fill="red", font=font)
+            draw.text((x, y), _ERROR_MSG, fill="black", font=font)
+
+
+            _IMG_DEF = f"Model Image   |    Size  {image_size[0]}x{image_size[1]} px"
+
+            draw.text((image_size[0]//2, image_size[1]-30), _IMG_DEF, fill="black", font=font,anchor='ms')
+
+            if location:
+                # Save the image
+                image.save(location)
+            
+            if bOutputImage:
+                return image 
+        
+
         return resp
     
     @staticmethod
