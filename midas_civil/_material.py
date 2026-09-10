@@ -335,7 +335,7 @@ class CreepShrinkage:
 
     class IRC:
         def __init__(self,name: str, code_year: _CreepIRCYear = 2011, fck: float = 0, notional_size: float = 1,
-                     relative_humidity: float = 70, age_shrinkage: int = 3, type_cement: _CreepIRCCementType = 'NR', type_aggregate:_CreepIRCAggType='Basalt',id: int = None):
+                     relative_humidity: float = 70, age_shrinkage: int = 3, type_cement: _CreepIRCCementType = 'NR', type_aggregate:_CreepIRCAggType=None,id: int = None):
             """
             IRC Creep and Shrinkage for Indian Road Congress standards. 
 
@@ -350,7 +350,8 @@ class CreepShrinkage:
                 relative_humidity (float): The relative humidity in percentage (40-99%). 
                 age_shrinkage (int): The age of the concrete at the beginning of shrinkage in days. 
                 type_cement (str, optional): The type of cement ('SL'= Slow Setting cement, 'NR'= Normal cement, 'RS'=Rapid hardening cement). Only for IRC:112-2011. Defaults to 'NR'. 
-                type_aggregate (str, optional): The type of aggregates ('Basalt','Quartzite','Limestone','Sandstone')
+                type_aggregate (str, optional): The type of aggregates ('Basalt','Quartzite','Limestone','Sandstone'). IRC:112-2020 only.
+                    Fork: defaults to None = TYPEOFAFFR is not sent and MIDAS keeps its own default (the 1.6 behaviour).
                 id (int, optional): A specific ID for the material. Auto-generated if not provided.
 
             Examples:
@@ -384,7 +385,11 @@ class CreepShrinkage:
             if code_year == 2020 or int(code_year) == 2020:
                 js["CODE"] = "INDIA_IRC_112_2020"
                 js["CTYPE"] = type_cement
-                js["TYPEOFAFFR"] = _map_CreepIRCAggTypeIndex.get(type_aggregate,0)
+                # FORK COMPAT: upstream always sends TYPEOFAFFR (default Basalt = 0).
+                # 1.6 never sent it, so an existing model keeps whatever MIDAS
+                # defaults to; only send it when the caller asks for an aggregate.
+                if type_aggregate is not None:
+                    js["TYPEOFAFFR"] = _map_CreepIRCAggTypeIndex.get(type_aggregate,0)
             elif code_year == 2011 or int(code_year) == 2011:
                 js["CODE"] = "INDIA_IRC_112_2011"
                 js["CTYPE"] = type_cement

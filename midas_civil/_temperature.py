@@ -706,7 +706,29 @@ class Temperature:
                     value        = None,
                     elast        = None,
                     thermal      = None,
-                    id           = None):
+                    id           = None,
+                    *,
+                    val_b=None, val_h1=None, val_h2=None, val_t1=None, val_t2=None,
+                    psc_ref=None, psc_opt_b=None, psc_opt_h1=None, psc_opt_h2=None):
+
+            # ── FORK COMPAT: midas_civil <= 1.6 keywords ─────────────────────────
+            # 1.7 replaced val_b / val_h1 / val_h2 / val_t1 / val_t2 with
+            # b_value + value=[[h1, h2, t1, t2]].  The old keywords still work for
+            # General sections and produce the identical /db/btmp payload, so
+            # scripts written against 1.6 run unchanged.  The PSC options cannot
+            # be mapped one-to-one (1.7 derives REF from ref_pos), so they raise.
+            _legacy = (val_b, val_h1, val_h2, val_t1, val_t2)
+            _legacy_psc = (psc_ref, psc_opt_b, psc_opt_h1, psc_opt_h2)
+            if any(v is not None for v in _legacy + _legacy_psc):
+                if value is not None:
+                    raise TypeError("Temperature.BeamSection: pass either value= or the legacy "
+                                    "val_* keywords, not both.")
+                if section_type.lower() == 'psc' or any(v is not None for v in _legacy_psc):
+                    raise TypeError("Temperature.BeamSection: the legacy val_*/psc_* keywords are only "
+                                    "supported for section_type='General'; for PSC use b_value= and "
+                                    "value=[[h1, h2, t1, t2], ...].")
+                b_value = 0 if val_b is None else val_b
+                value = [[0 if v is None else v for v in (val_h1, val_h2, val_t1, val_t2)]]
 
             # ── Defaults ──────────────────────────────────────────────────────────
             if value is None:
