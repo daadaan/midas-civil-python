@@ -11,18 +11,50 @@ from base64 import b64decode
 # print(js_file)
 # js_json = json.load(js_file)
 
+_SD_Type = Literal["X","Y","COMB"]
 _forceType = Literal["KN", "N", "KGF", "TONF", "LBF", "KIPS"]
 _lengthType = Literal["M", "CM", "MM", "FT", "IN"]
 _numFormat = Literal["Fixed","Scientific","General"]
 _resTable = Literal["REACTIONG","REACTIONL","DISPLACEMENTG","DISPLACEMENTL","TRUSSFORCE","TRUSSSTRESS"]
-
+_Ref_Point_Type = Literal["Ground","Add Ground Motion","Another Node"]
 _reactionType = Literal["Global", "Local", "SurfaceSpring"]
 _dispdiaType = Literal["Global", "Local"]
 _dispType = Literal["Accumulative", "Current", "Real"]
 _plateforce = Literal["Global", "Local"]
+_eigenOutputType = Literal["EigenVector","Eigenvalue_Analysis","Modal_Participation_Percent","Modal_Participation_Mass","Modal_Participation_Factor","Modal_Direction_Factor"]
+_bucklingOutputType = Literal["BucklingVector","Buckling_Analysis"]
+_EIGEN_SUBTABLE_MAP = {"Eigenvalue_Analysis":"EIGENVALUEANALYSIS","Modal_Participation_Percent":"MODALPARTICIPATIONMASSESPRINTOUT(1)","Modal_Participation_Mass":"MODALPARTICIPATIONMASSESPRINTOUT(2)","Modal_Participation_Factor":"MODALPARTICIPATIONFACTORPRINTOUT","Modal_Direction_Factor":"MODALDIRECTIONFACTORPRINTOUT","Buckling_Analysis":"BUCKLINGANALYSIS"}
+
+def _convertColm2DataType(res_df):
+    import polars as pl
+
+    str_colms = set(res_df.select(pl.selectors.matches("Load|Part|Remark")).columns)
+    int_colms1 = set(res_df.select(pl.selectors.by_name("Index","Elem",require_all=False)).columns)
+    int_colms2 = set(res_df.select(pl.selectors.matches("/Node")).columns)-int_colms1
+    float_colms = set(res_df.select(pl.selectors.matches("Axial|Shear|Torsion|Moment|FX|FY|FZ|MX|MY|MZ|DX|DY|DZ|RX|RY|RZ|Fx|Fy|Fz|Mx|My|Mz|Dx|Dy|Dz|Rx|Ry|Rz|Level|Height|Displacement|Maximum/Average|Elements|Drift|Factor|Frequency|TRAN|ROTN|Period|Tolerance|Sig-|Time/Step|")).columns)-str_colms-int_colms1-int_colms2
+    
+    res_type_df = res_df.with_columns([
+        pl.selectors.by_name(*str_colms,require_all=False).cast(pl.String),
+        pl.selectors.by_name(*int_colms1,require_all=False).cast(pl.Int64),
+        pl.selectors.by_name(*int_colms2,require_all=False).cast(pl.Int64),
+        pl.selectors.by_name(*float_colms,require_all=False).cast(pl.Float32),
+
+    ])
+
+    if "Node" in res_type_df.columns:
+        res_type_df = res_type_df.with_columns(
+            pl.col("Node")
+            .map_elements(
+                lambda x: int(x) if str(x).isdigit() else str(x),
+                return_dtype=pl.Object,
+                )
+            )
+
+            
+    return res_type_df
 
 #---- INPUT: JSON -> OUTPUT : Data FRAME --------- ---------
-def _JSToDF_ResTable(js_json,excelLoc,sheetName,cellLoc="A1"):
+def _JSToDF_ResTable(js_json,excelLoc,sheetName,cellLoc="A1",outputFormat='Polars'):
     # Check for SS_Table existence
     import polars as pl
     if "SS_Table" not in js_json:
@@ -52,18 +84,172 @@ def _JSToDF_ResTable(js_json,excelLoc,sheetName,cellLoc="A1"):
 
     res_df = pl.DataFrame(res_json) # Final DF
 
-    res_type_df = res_df.with_columns([
-        pl.selectors.matches("Index|Elem|Node").cast(pl.Int64),
-        pl.selectors.matches("Shear|Torsion|Moment|F|M|D|R").cast(pl.Float64),
-        pl.selectors.matches("Load|Part").cast(pl.String),
-    ])
+    res_type_df = _convertColm2DataType(res_df)
 
+    # EXPORTING FILE STARTS HERE................
+    if excelLoc:
+        _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
+
+    if outputFormat=='JSON':
+        return res_type_df.to_dict(as_series=False)
+    elif outputFormat=='Polars':
+        return(res_type_df)
+    else:
+        return(res_type_df)
+
+#---- INPUT: JSON -> OUTPUT : Data FRAME --------- ---------
+def _JSToDF_ResTable_TEXT(table_type, js_json, excelLoc, sheetName, cellLoc="A1",outputFormat='Polars'):
+    # Check for result key existence
+    import polars as pl
+    if table_type not in js_json:
+        if 'message' in js_json:
+            print(f'⚠️  Error from API: {js_json["message"]}')
+        else:
+            print(f'⚠️  Error: "{table_type}" not found in the response JSON.')
+        return pl.DataFrame() # Return empty DataFrame on error
+
+    res_json = {}
+    c=0
+
+    # Check for HEAD and DATA existence
+    if "HEAD" not in js_json[table_type] or "DATA" not in js_json[table_type]:
+        print(f'⚠️  Error: "HEAD" or "DATA" not found in "{table_type}".')
+        return pl.DataFrame() # Return empty DataFrame
+
+    for heading in js_json[table_type]["HEAD"]:
+        for dat in js_json[table_type]["DATA"]:
+            try:
+                res_json[heading].append(dat[c])
+            except:
+                res_json[heading]=[]
+                res_json[heading].append(dat[c])
+
+        c+=1
+
+    res_df = pl.DataFrame(res_json) # Final DF
+
+    res_type_df = _convertColm2DataType(res_df)
 
     # EXPORTING FILE STARTS HERE................
     if excelLoc:
         _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
 
     return(res_type_df)
+
+def _format_mode_name(m):
+    ''' Normalizes 1 / '1' / 'Mode 1' / 'Mode1' -> 'Mode1' '''
+    s = str(m).strip().lower().replace("mode", "").strip()
+    return f"Mode{s}"
+
+
+def _format_modes(modes):
+    if isinstance(modes, (list, tuple, set)):
+        return [_format_mode_name(m) for m in modes]
+    return [_format_mode_name(modes)]
+
+
+#---- INPUT: JSON (Eigen result with SUB_TABLES) -> OUTPUT : Data FRAME ----
+def _JSToDF_ResTable_Eigen(js_json, output, excelLoc, sheetName, cellLoc="A1",outputFormat='Polars'):
+    import polars as pl
+
+    if "SS_Table" not in js_json:
+        if 'message' in js_json:
+            print(f'⚠️  Error from API: {js_json["message"]}')
+        else:
+            print('⚠️  Error: "SS_Table" not found in the response JSON.')
+        return pl.DataFrame()
+
+    table_json = js_json["SS_Table"]
+
+    if output == "EigenVector" or output == "BucklingVector":
+        if "HEAD" not in table_json or "DATA" not in table_json:
+            print('⚠️  Error: "HEAD" or "DATA" not found in "SS_Table".')
+            return pl.DataFrame()
+
+        res_json = {}
+        c = 0
+        for heading in table_json["HEAD"]:
+            for dat in table_json["DATA"]:
+                try:
+                    res_json[heading].append(dat[c])
+                except:
+                    res_json[heading] = []
+                    res_json[heading].append(dat[c])
+            c += 1
+
+        res_df = pl.DataFrame(res_json)
+        res_type_df = _convertColm2DataType(res_df)
+
+    else:
+        sub_key = _EIGEN_SUBTABLE_MAP.get(output)
+        if sub_key is None:
+            print(f'⚠️  Error: Unknown output type "{output}".')
+            return pl.DataFrame()
+
+        if "SUB_TABLES" not in table_json:
+            print('⚠️  Error: "SUB_TABLES" not found in "SS_Table".')
+            return pl.DataFrame()
+
+        sub_table_data = None
+        for sub_tab in table_json["SUB_TABLES"]:
+            key_name = next(iter(sub_tab))
+            key_norm = key_name.replace(" ", "").upper()
+            if key_norm == sub_key or key_norm.startswith(sub_key):
+                sub_table_data = sub_tab[key_name]
+                break
+
+        if sub_table_data is None:
+            print(f'⚠️  Error: Sub-table for "{output}" not found in response.')
+            return pl.DataFrame()
+
+        if "HEAD" not in sub_table_data or "DATA" not in sub_table_data:
+            print(f'⚠️  Error: "HEAD" or "DATA" not found in sub-table for "{output}".')
+            return pl.DataFrame()
+
+        res_json = _Head_Data_2_DF_JSON(sub_table_data["HEAD"], sub_table_data["DATA"])
+        res_df = pl.DataFrame(res_json)
+        res_type_df = _convertColm2DataType(res_df)
+
+    if excelLoc:
+        _write_df_to_existing_excel(res_type_df, (excelLoc, sheetName, cellLoc))
+
+    return res_type_df
+
+
+
+
+# #---- INPUT: JSON -> OUTPUT : Data FRAME --------- ---------
+# def JSON2DF(json_data):
+#     ''' CONVERTS JSON DATA WITH HEAD AND DATA KEYS TO POLARS DATAFRAME'''
+#     # Check for SS_Table existence
+
+#     import polars as pl
+
+        
+#     res_json = {}
+#     c=0
+    
+#     # Check for HEAD and DATA existence
+#     if "HEAD" not in json_data or "DATA" not in json_data:
+#         print('⚠️  Error: "HEAD" or "DATA" not found in "SS_Table".')
+#         return pl.DataFrame() # Return empty DataFrame
+        
+#     for heading in json_data["HEAD"]:
+#         for dat in json_data["DATA"]:
+#             try:
+#                 res_json[heading].append(dat[c])
+#             except:
+#                 res_json[heading]=[]
+#                 res_json[heading].append(dat[c])
+
+#         c+=1
+
+#     res_df = pl.DataFrame(res_json) # Final DF
+
+#     res_type_df = _convertColm2DataType(res_df)
+
+#     return(res_type_df)
+
 
 
 def _Head_Data_2_DF_JSON(head,data):
@@ -92,7 +278,7 @@ def _Head_Data_2_DF_JSON(head,data):
     return res_json
     
 
-def _JSToDF_UserDefined(tableName,js_json,summary,excelLoc,sheetName,cellLoc="A1"):
+def _JSToDF_UserDefined(tableName,js_json,summary,excelLoc,sheetName,cellLoc="A1",outputFormat='Polars'):
     import polars as pl
     if 'message' in js_json:
         print(f'⚠️  {tableName} table name does not exist.')
@@ -120,10 +306,13 @@ def _JSToDF_UserDefined(tableName,js_json,summary,excelLoc,sheetName,cellLoc="A1
     res_json = _Head_Data_2_DF_JSON(head,data)
     res_df = pl.DataFrame(res_json)
 
-    if excelLoc:
-        _write_df_to_existing_excel(res_df,(excelLoc,sheetName, cellLoc))
+    res_type_df = _convertColm2DataType(res_df)
 
-    return(res_df)
+    # EXPORTING FILE STARTS HERE................
+    if excelLoc:
+        _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
+
+    return(res_type_df)
 
     
 def _write_df_to_existing_excel(res_df, existing_excel_input: list):
@@ -218,6 +407,17 @@ def _changeUNITandGetData(js_dat,force_unit,len_unit,jsonloc,keyName):
             _saveJSON(ss_json,jsonloc)
     return ss_json
 
+def _changeUNITandGetDataText(js_dat,force_unit,len_unit,jsonloc,keyName):
+    Model.units(force=force_unit,length=len_unit)
+    ss_json = MidasAPI("POST","/post/TEXT",js_dat)
+    if jsonloc:
+        if "SS_Table" in ss_json:
+            ss_json[keyName] = ss_json.pop("SS_Table")
+            _saveJSON(ss_json,jsonloc)
+            ss_json["SS_Table"] = ss_json.pop(keyName)
+        else:
+            _saveJSON(ss_json,jsonloc)
+    return ss_json
 
 def _keys2JSON(keys):
     if isinstance(keys,list):
@@ -274,9 +474,10 @@ class TableOptions:
     EXCEL_FILE_LOC = None
     EXCEL_SHEET_NAME = None
     EXCEL_CELL_POS = "end"
+    OUTPUT_FORMAT = 'Polars'
 
     def __init__(self,force_unit:_forceType=None,len_unit:_lengthType=None,num_format:_numFormat=None,decimal_place:int=None,
-                 JSONFileLoc=None,ExcelFileLoc=None , ExcelSheetName = None,ExcelCellPos = None):
+                 JSONFileLoc=None,ExcelFileLoc=None , ExcelSheetName = None,ExcelCellPos = None , outputFormat = None):
         
         # existing_excel_input -> excel file , sheet , cell
 
@@ -297,6 +498,7 @@ class TableOptions:
         self.EXCEL_FILE_LOC = ExcelFileLoc or TableOptions.EXCEL_FILE_LOC
         self.EXCEL_SHEET_NAME = ExcelSheetName or TableOptions.EXCEL_SHEET_NAME
         self.EXCEL_CELL_POS = ExcelCellPos or TableOptions.EXCEL_CELL_POS
+        self.OUTPUT_FORMAT = outputFormat or TableOptions.OUTPUT_FORMAT
 
     @property
     def Style(self):
@@ -342,7 +544,7 @@ class Result :
             js_dat = _generate(tabletype,keys,loadcase,[],cs_stage,options)
 
             ResultJSON = _changeUNITandGetData(js_dat,options.FORCE_UNIT,options.LEN_UNIT,options.JSON_FILE_LOC,tabletype)
-            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
         
             # ---------- User defined TABLE (Dynamic Report Table) ------------------------------
@@ -408,7 +610,7 @@ class Result :
             js_dat = _generate(table_type,keys,loadcase,components,cs_stage,options)
 
             ResultJSON = _changeUNITandGetData(js_dat,options.FORCE_UNIT,options.LEN_UNIT,options.JSON_FILE_LOC,table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -444,7 +646,7 @@ class Result :
                 js_dat["Argument"]["DISP_OPT"] = displacement_type
 
             ResultJSON = _changeUNITandGetData(js_dat,options.FORCE_UNIT,options.LEN_UNIT,options.JSON_FILE_LOC,table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON,options.EXCEL_FILE_LOC,sheetName,options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
     
         @staticmethod
@@ -468,7 +670,7 @@ class Result :
             js_dat = _generate(table_type, keys, loadcase, components, cs_stage, options)
             
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -492,7 +694,7 @@ class Result :
             js_dat = _generate(table_type, keys, loadcase, components, cs_stage, options)
             
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -520,7 +722,7 @@ class Result :
                 js_dat["Argument"]["PARTS"] = parts
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -552,7 +754,7 @@ class Result :
                 js_dat["Argument"]['ITEM_TO_DISPLAY'] = items
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -581,7 +783,7 @@ class Result :
                 js_dat["Argument"]["PARTS"] = parts
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -609,7 +811,7 @@ class Result :
                 js_dat["Argument"]["PARTS"] = parts
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -641,7 +843,7 @@ class Result :
                 js_dat["Argument"]['ITEM_TO_DISPLAY'] = items
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -674,7 +876,7 @@ class Result :
                 js_dat["Argument"]["SECTION_POSITION"] = section_position
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -707,7 +909,7 @@ class Result :
                 js_dat["Argument"]["SECTION_POSITION"] = section_position
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -740,7 +942,7 @@ class Result :
                 js_dat["Argument"]["SECTION_POSITION"] = section_position
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -774,7 +976,7 @@ class Result :
                 js_dat["Argument"]["AVERAGE_NODAL_RESULT"] = True
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -807,7 +1009,7 @@ class Result :
                 js_dat["Argument"]["SECTION_POSITION"] = section_position
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -849,7 +1051,7 @@ class Result :
                 js_dat["Argument"]["AVERAGE_NODAL_RESULT"] = True
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -896,7 +1098,7 @@ class Result :
                 js_dat["Argument"]["AVERAGE_NODAL_RESULT"] = True
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
 
         @staticmethod
@@ -933,7 +1135,7 @@ class Result :
                 js_dat["Argument"]["AVERAGE_NODAL_RESULT"] = True
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
         
         @staticmethod
@@ -967,12 +1169,952 @@ class Result :
             }
 
             ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
-            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
             return polarDF
         
+                
+        @staticmethod
+        def Story_Displacement(SD_type:_SD_Type = "X",
+                                loadcase:list=[], 
+                                options:TableOptions=None):
+            '''
+            Fetches story displacement - story result tables.
+            
+            Args:
+                SD_type (str): "X","Y" or "COMB
+                loadcase (list): List of load case names, e.g., ["Selfweight(ST)"].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+
+            if SD_type == "X":
+                table_type = "STORY_DISPLACEMENT_X"
+            elif SD_type == "Y":
+                table_type = "STORY_DISPLACEMENT_Y"
+            else:
+                table_type = "STORY_DISPLACEMENT_COMB"
+
+            sheetName = options.EXCEL_SHEET_NAME or f"{table_type} {_case2name(loadcase)}"
+            
+            js_dat = _generate(table_type,None,loadcase,None,None, options)
+            
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+        
+        @staticmethod
+        def Story_Drift(SD_type:_SD_Type = "X",
+                        loadcase:list=[], 
+                        allowable_ratio:float = 0.0015,
+                        options:TableOptions=None):
+            '''
+            Fetches story drift -    story result tables.
+            
+            Args:
+                SD_type (str): "X","Y" or "COMB"
+                loadcase (list): List of load case names, e.g., ["Selfweight(ST)"].
+                allowable_ratio (float): Allowable Story Drift Ratio
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+
+            if SD_type == "X":
+                table_type = "STORY_DRIFT_X"
+            elif SD_type == "Y":
+                table_type = "STORY_DRIFT_Y"
+            else:
+                table_type = "STORY_DRIFT_COMB"
+
+            sheetName = options.EXCEL_SHEET_NAME or f"{table_type} {_case2name(loadcase)}"
+            
+            js_dat = _generate(table_type,None,loadcase,None,None, options)
+            js_dat["Argument"]['SET_STORY_DRIFT_PARAMS'] = {}
+            js_dat["Argument"]['SET_STORY_DRIFT_PARAMS']['RESPONSE_MOD_FACTOR_CHECK']  = True
+            js_dat["Argument"]['SET_STORY_DRIFT_PARAMS']['RESPONSE_MOD_FACTOR_VALUE']  = 1 
+            js_dat["Argument"]['SET_STORY_DRIFT_PARAMS']['SCALE_FACTOR_VALUE']  = 1
+            js_dat["Argument"]['SET_STORY_DRIFT_PARAMS']['ALLOWABLE_RATIO']  = allowable_ratio
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+
+        @staticmethod
+        def HoH_Stress(keys=[],Stress_option:str = "Local", node_flag_center=False, node_flag_nodes=True, 
+                       components=['all'], cs_stage=[], options:TableOptions=None):
+            '''
+            Fetches Heat of Hydration Stress result tables.
+            
+            Args:
+                keys (list/str): List of Element IDs or a Structure Group Name.
+                Stress_option (str): Stress Option for "Local" or "Global".
+                components (list): Table components to include. Defaults to ['all'].
+                cs_stage (list/str): Construction Stage options.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"Heat of Hydration Stress ({Stress_option})"
+
+            if Stress_option == "Local":
+                table_type = "HEAT_HYDR_STRESS_L"
+            else:
+                table_type = "HEAT_HYDR_STRESS_G"
+
+            js_dat = _generate(table_type, keys, ['all'], components, cs_stage, options)
+
+            js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["NODE_FLAG"] = {
+                "CENTER": node_flag_center,
+                "NODES": node_flag_nodes
+            }
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+
+        @staticmethod
+        def HoH_Temperature(keys=[],components=['all'], cs_stage=[], options:TableOptions=None):
+            '''
+            Fetches Heat of Hydration Temperature result tables.
+            
+            Args:
+                keys (list/str): List of Element IDs or a Structure Group Name.
+                components (list): Table components to include. Defaults to ['all'].
+                cs_stage (list/str): Construction Stage options.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"Heat of Hydration Temperature"
+
+            table_type = "HEAT_HYDR_TEMPERATURE"
+
+            js_dat = _generate(table_type, keys, ['all'], components, cs_stage, options)
+
+            js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+
+        @staticmethod
+        def HoH_Displacement(keys=[],components=['all'], cs_stage=[], options:TableOptions=None):
+            '''
+            Fetches Heat of Hydration Displacement result tables.
+            
+            Args:
+                keys (list/str): List of Element IDs or a Structure Group Name.
+                components (list): Table components to include. Defaults to ['all'].
+                cs_stage (list/str): Construction Stage options.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"Heat of Hydration Displacement"
+
+            table_type = "HEAT_HYDR_DISPLACEMENT"
+
+            js_dat = _generate(table_type, keys, ['all'], components, cs_stage, options)
+
+            js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+
+        @staticmethod
+        def HoH_Tensile_Stress(keys=[],components=['all'], cs_stage=[], options:TableOptions=None):
+            '''
+            Fetches Heat of Hydration Tensile Stress result tables.
+            
+            Args:
+                keys (list/str): List of Element IDs or a Structure Group Name.
+                components (list): Table components to include. Defaults to ['all'].
+                cs_stage (list/str): Construction Stage options.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"Heat of Hydration Tensile Stress"
+
+            table_type = "HEAT_HYDR_TENS_STRESS"
+
+            js_dat = _generate(table_type, keys, ['all'], components, cs_stage, options)
+
+            js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+
+        @staticmethod
+        def HoH_Pipe_Node_Temperature(keys=[],components=['all'], cs_stage=[], options:TableOptions=None):
+            '''
+            Fetches Heat of Hydration Pipe Cooling Nodal Temperature Result tables.
+            
+            Args:
+                keys (list/str): List of Element IDs or a Structure Group Name.
+                components (list): Table components to include. Defaults to ['all'].
+                cs_stage (list/str): Construction Stage options.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"Heat of Hydration Pipe Cooling Nodal Temperature"
+
+            table_type = "HEAT_HYDR_PIPE_NODE_TEMP"
+
+            js_dat = _generate(table_type, keys, ['all'], components, cs_stage, options)
+
+            js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable(ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS, options.OUTPUT_FORMAT)
+            return polarDF
+        
+        @staticmethod
+        def TH_Disp(th_case: list,keys=[],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    ref_pt: _Ref_Point_Type = "Ground", anr_node: int = None,
+                    options: TableOptions = None):
+            '''
+            Fetches Time History Displacement (Node) result tables.
+            Args:
+                keys (list/str): List of Node IDs or a Structure Group Name.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                ref_pt (str): Reference point method 1 - "Ground" or "AddGroundMotion".
+                            Ignored if `anr_node` is provided.
+                anr_node (int): Reference point method 2 - another node number.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_Disp {_case2name(th_case)}"
+            table_type = "TH_DISP"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+
+            if anr_node is not None:
+                js_dat["Argument"]["ANR_NODE"] = anr_node
+            elif ref_pt:
+                js_dat["Argument"]["REF_PT"] = ref_pt
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def TH_Velocity(th_case: list,keys=[],
+                        step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                        components=['all'],
+                        ref_pt: _Ref_Point_Type = "Ground", anr_node: int = None,
+                        options: TableOptions = None):
+            '''
+            Fetches Time History Velocity (Node) result tables.
+            Args:
+                keys (list/str): List of Node IDs or a Structure Group Name.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                ref_pt (str): Reference point method 1 - "Ground" or "AddGroundMotion".
+                            Ignored if `anr_node` is provided.
+                anr_node (int): Reference point method 2 - another node number.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_Velocity {_case2name(th_case)}"
+            table_type = "TH_VELOCITY"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+
+            if anr_node is not None:
+                js_dat["Argument"]["ANR_NODE"] = anr_node
+            elif ref_pt:
+                js_dat["Argument"]["REF_PT"] = ref_pt
+
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type, ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_Acceleration(th_case: list,keys=[],
+                            step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                            components=['all'],
+                            ref_pt: _Ref_Point_Type = "Ground", anr_node: int = None,
+                            options: TableOptions = None):
+            '''
+            Fetches Time History Acceleration (Node) result tables.
+            Args:
+                keys (list/str): List of Node IDs or a Structure Group Name.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                ref_pt (str): Reference point method 1 - "Ground" or "AddGroundMotion".
+                            Ignored if `anr_node` is provided.
+                anr_node (int): Reference point method 2 - another node number.
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_Accel {_case2name(th_case)}"
+            table_type = "TH_ACCEL"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+
+            if anr_node is not None:
+                js_dat["Argument"]["ANR_NODE"] = anr_node
+            elif ref_pt:
+                js_dat["Argument"]["REF_PT"] = ref_pt
+
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type, ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def TH_BeamForce(th_case: list,keys=[],parts=["PartI", "PartJ"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History BeamForce result tables.
+            Args:
+                keys (list/str): List of Beam Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_BeamForce {_case2name(th_case)}"
+            table_type = "TH_BEAMFORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+            
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+            
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_TrussForce(th_case: list,keys=[],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History TrussForce result tables.
+            Args:
+                keys (list/str): List of Truss Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_TrussForce {_case2name(th_case)}"
+            table_type = "TH_TRUSSFORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+
+        @staticmethod
+        def TH_PlaneStressForce(th_case: list,keys=[],parts: list=["PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlaneStressForce result tables.
+            Args:
+                keys (list/str): List of Plane Stress Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlaneStressForce {_case2name(th_case)}"
+            table_type = "TH_PLANE_STRESS_FORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_PlaneStrainForce(th_case: list,keys=[],parts: list=["PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlaneStrainForce result tables.
+            Args:
+                keys (list/str): List of Plane Strain Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlaneStrainForce {_case2name(th_case)}"
+            table_type = "TH_PLANE_STRAIN_FORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_SolidForce(th_case: list,keys=[],parts: list=["PartI", "PartJ","PartK","PartL","PartM","PartN","PartO","PartP"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History SolidForce result tables.
+            Args:
+                keys (list/str): List of Solid Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_SolidForce {_case2name(th_case)}"
+            table_type = "TH_SOLIDFORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_PlateForce(th_case: list,keys=[],parts: list=["PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlateForce result tables.
+            Args:
+                keys (list/str): List of Plate Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlateForce {_case2name(th_case)}"
+            table_type = "TH_PLATEFORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def TH_WallForce(th_case: list,keys=[],parts: list=["PartI", "PartJ"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History WallForce result tables.
+            Args:
+                keys (list/str): List of Wall Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_WallForce {_case2name(th_case)}"
+            table_type = "TH_WALLFORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def TH_PlateUnitForce(th_case: list,keys=[],parts: list=["PartC","PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlateForce (Unit Length) result tables.
+            Args:
+                keys (list/str): List of Plate Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlateUnitForce {_case2name(th_case)}"
+            table_type = "TH_PLATE_UNIT_FORCE"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_BeamStress(th_case: list,keys=[],parts=["PartI", "PartJ"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History BeamStress result tables.
+            Args:
+                keys (list/str): List of Beam Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_BeamStress {_case2name(th_case)}"
+            table_type = "TH_BEAMSTRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+            
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+            
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_TrussStress(th_case: list,keys=[],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History TrussStress result tables.
+            Args:
+                keys (list/str): List of Truss Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_TrussStress {_case2name(th_case)}"
+            table_type = "TH_TRUSSSTRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        @staticmethod
+        def TH_PlateStress(th_case: list,keys=[],parts: list=["PartC","PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlateStress result tables.
+            Args:
+                keys (list/str): List of Plate Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlateStress {_case2name(th_case)}"
+            table_type = "TH_PLATESTRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def TH_PlaneStress_Stress(th_case: list,keys=[],parts: list=["PartC","PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlaneStress Stress result tables.
+            Args:
+                keys (list/str): List of PlaneStress Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlaneStress_Stress {_case2name(th_case)}"
+            table_type = "TH_PLANESTRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_PlaneStrain_Stress(th_case: list,keys=[],parts: list=["PartC","PartI", "PartJ","PartK","PartL"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History PlaneStrain Stress result tables.
+            Args:
+                keys (list/str): List of PlaneStrain Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_PlaneStrain_Stress {_case2name(th_case)}"
+            table_type = "TH_PLANE_STRAIN_STRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def TH_SolidStress(th_case: list,keys=[],parts: list=["PartI", "PartJ","PartK","PartL","PartM","PartN","PartO","PartP"],
+                    step_from: float = 0, step_to: float = 1, step_interval: int = 1,
+                    components=['all'],
+                    options: TableOptions = None):
+            '''
+            Fetches Time History Solid Stress result tables.
+            Args:
+                keys (list/str): List of Solid Element IDs.
+                th_case (list): Time history load case names, e.g. ["Elcent"].
+                step_from (float): Start time.
+                step_to (float): End time.
+                step_interval (int): Time interval (STEPS).
+                components (list): Table components to include. Defaults to ['all'].
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"TH_SolidStress {_case2name(th_case)}"
+            table_type = "TH_SOLIDSTRESS"
+            js_dat = _generate(table_type, keys, th_case, components, [], options)
+
+            js_dat["Argument"]["TEXT_TYPE"] = js_dat["Argument"].pop("TABLE_TYPE")
+
+            if parts:
+                js_dat["Argument"]["PARTS"] = parts
+
+            if "LOAD_CASE_NAMES" in js_dat["Argument"]:
+                js_dat["Argument"]["TH_CASE_NAME"] = js_dat["Argument"].pop("LOAD_CASE_NAMES")
+
+            js_dat["Argument"]["STEP"] = {
+                "FROM": step_from,
+                "TO": step_to,
+                "STEPS": step_interval
+            }
+                
+            js_dat["Argument"].pop("TABLE_NAME", None)
+            ResultJSON = _changeUNITandGetDataText(js_dat, options.FORCE_UNIT, options.LEN_UNIT, options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_TEXT(table_type,ResultJSON, options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+        
+        @staticmethod
+        def VibrationModeShapes(modes, nodeIDs=[], output:_eigenOutputType="EigenVector",
+                                 options:TableOptions=None):
+            '''
+            Fetches Vibration Mode Shape (Eigenvalue Mode) result tables.
+
+            Args:
+                modes (str/int/list): Mode number(s), e.g. 1, 'Mode 1', or ['Mode1','Mode2'].
+                nodeIDs (list/str): List of Node IDs or a Structure Group Name.
+                output (str): "EigenVector" | "Eigenvalue_Analysis" |
+                               "Modal_Participation_Percent" | "Modal_Participation_Mass" |
+                               "Modal_Participation_Factor" | "Modal_Direction_Factor"
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"VibrationModeShape {output}"
+
+            table_type = "EIGENVALUEMODE"
+            components = ["Node", "Mode", "UX", "UY", "UZ", "RX", "RY", "RZ"] 
+
+            js_dat = _generate(table_type, nodeIDs, None, components, [], options)
+            js_dat["Argument"]["MODES"] = _format_modes(modes)
+            
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT,options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_Eigen(ResultJSON, output,options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
+
+        @staticmethod
+        def BucklingModeShapes(modes, nodeIDs=[], output:_bucklingOutputType="BucklingVector",
+                                 options:TableOptions=None):
+            '''
+            Fetches Buckling Mode Shape result tables.
+
+            Args:
+                modes (str/int/list): Mode number(s), e.g. 1, 'Mode 1', or ['Mode1','Mode2'].
+                nodeIDs (list/str): List of Node IDs or a Structure Group Name.
+                output (str): "BucklingVector" | "Buckling_Analysis" |
+                options : Table options
+            '''
+            if options == None: options = TableOptions()
+            sheetName = options.EXCEL_SHEET_NAME or f"VibrationModeShape {output}"
+
+            table_type = "BUCKLINGMODE"
+            components = ["Node", "Mode", "UX", "UY", "UZ", "RX", "RY", "RZ"] 
+
+            js_dat = _generate(table_type, nodeIDs, None, components, [], options)
+            js_dat["Argument"]["MODES"] = _format_modes(modes)
+            
+            ResultJSON = _changeUNITandGetData(js_dat, options.FORCE_UNIT, options.LEN_UNIT,options.JSON_FILE_LOC, table_type)
+            polarDF = _JSToDF_ResTable_Eigen(ResultJSON, output,options.EXCEL_FILE_LOC, sheetName, options.EXCEL_CELL_POS)
+            return polarDF
 
     @staticmethod
-    def IMAGE(ResultGraphic:ResultGraphic,location:str='',image_size:tuple = None,CS_StageName:str='',CS_StepIndex=2,_bOutputImage=True):
+    def IMAGE(ResultGraphic:ResultGraphic,location:str='',image_size:tuple = None,CS_StageName:str='',CS_StepIndex=2, bOutputImage=True):
         ''' 
         Capture Result Graphic in CIVIL NX   
             Result Graphic - ResultGraphic JSON (ResultGraphic.BeamDiagram())
@@ -981,6 +2123,7 @@ class Result :
             Construction stage Name (default = "") if desired
         '''
         if image_size==None: image_size=View.Image_Size
+        _ERROR_MSG = ''
         json_body = {
                 "Argument":{
                     "SET_MODE":"post",
@@ -1003,15 +2146,73 @@ class Result :
         
         resp = MidasAPI('POST','/view/CAPTURE',json_body)
 
-        bs64_img = b64decode(resp["base64String"])
-        if location:
-            __img_file = open(location, 'wb')  # Open image file to save.
-            __img_file.write(bs64_img)  # Decode and write data.
-            __img_file.close()
+        if "base64String" in resp:
+            bs64_img = b64decode(resp["base64String"])
 
-        if _bOutputImage:
-            from PIL import Image as ImagePIL
-            from io import BytesIO
-            # return bs64_img
-            return ImagePIL.open(BytesIO(bs64_img))
+            if location:
+                __img_file = open(location, 'wb')  # Open image file to save.
+                __img_file.write(bs64_img)  # Decode and write data.
+                __img_file.close()
+            
+            if bOutputImage:
+                from PIL import Image
+                from io import BytesIO
+
+                # image = Image.new("RGB", image_size, "white")
+                # buffer = BytesIO()
+                # image.save(buffer)
+                # buffer.seek(0)
+
+                return Image.open(BytesIO(bs64_img))
+
+
+                
+                # return bs64_img
+                return Image(temp_img)
+            
+            
+        else:
+            # ERROR IMAGE --------------
+            try:
+                _ERROR_MSG = resp['error']['message']
+            except:
+                _ERROR_MSG = "CANNOT RETRIEVE IMAGE. ERROR UNKNOWN"
+
+            
+            from PIL import Image, ImageDraw, ImageFont
+            image = Image.new("RGB", image_size, "white")
+            draw = ImageDraw.Draw(image)
+
+            font = ImageFont.load_default()
+
+
+            # Get text bounding box for centering
+            bbox = draw.textbbox((0, 0), _ERROR_MSG, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+
+            # Calculate centered position
+            x = (image_size[0] - text_width) // 2
+            y = (image_size[1] - text_height) // 2
+
+            # Draw the text in black
+            draw.text((x, y-15), "ERROR", fill="red", font=font)
+            draw.text((x, y), _ERROR_MSG, fill="black", font=font)
+
+
+
+
+            _RES_TYPE = ResultGraphic["CURRENT_MODE"]
+            _LC_NAME = ResultGraphic["LOAD_CASE_COMB"]["NAME"]
+            _IMG_DEF = f"Result Image    |    {_RES_TYPE}  for  {_LC_NAME}  load case.    |    Size  {image_size[0]}x{image_size[1]} px"
+
+            draw.text((image_size[0]//2, image_size[1]-30), _IMG_DEF, fill="black", font=font,anchor='ms')
+
+            if location:
+                # Save the image
+                image.save(location)
+            
+            if bOutputImage:
+                return image           
+
         return resp

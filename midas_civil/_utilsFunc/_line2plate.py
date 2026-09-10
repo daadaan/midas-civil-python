@@ -1,5 +1,9 @@
 # from midas_civil import *
-from midas_civil import MidasAPI,Node,Element,Boundary,Thickness,Section,Model,NX
+# from midas_civil import MidasAPI,Node,Element,Boundary,Thickness,Section,Model,NX
+
+from .._mapi import MidasAPI,NX
+from .._model import Node,Element,Boundary,Thickness,Section,Model
+
 from colorama import Fore,Style
 import numpy as np
 from math import hypot , sin , cos
@@ -549,6 +553,18 @@ def getCGdata():
 def SS_create(nSeg , mSize , bRigdLnk , meshSize, elemList,reverse):
     L2P._reverse = reverse
     L2P.first = reverse
+    L2P.nDivMESH =[]
+    L2P.CG_data = {}
+    L2P.thick_js = {}
+    L2P.sorted_nodes = []
+    L2P.endNodes = []
+    L2P.rgdID +=1
+    L2P.firstNodeCreate = True
+    L2P.lastCreateNodeIDs = []
+    L2P.lastTapSectPlate = ()
+    L2P.bFirstlastTapSectPlate = True
+
+
     # ORIGINAL ALIGNMENT
     pbar = tqdm(total=14,desc="Converting Line to Plate ")
 

@@ -10,7 +10,7 @@ from typing import Literal
 from ._material import Material
 from ._section import Section
 _meshType = Literal['Quad','Tri']
-_extrudeInp = Literal['XYZ','ID','NODE']
+_extrudeInp = Literal['XYZ','NODE_ID']
 _order = Literal['ID','XYZ','XZY','YXZ','YZX','ZXY','ZYX']
 
 
@@ -307,8 +307,8 @@ def _ADD(self):
         elif isinstance(self._GROUP, list):
             for gpName in self._GROUP:
                 _add_elem_2_stGroup(self.ID,gpName)
-                for nd in self.NODE:
-                    _add_node_2_stGroup(nd,gpName)
+                # for nd in self.NODE:
+                _add_node_2_stGroup(self.NODE,gpName)
         elif isinstance(self._GROUP, str):
             _add_elem_2_stGroup(self.ID,self._GROUP)
             # for nd in self.NODE:
@@ -434,7 +434,7 @@ def _JS2Obj(id, js):
     elif elem_type == 'COMPTR':
         Element.Compression(args['node'][0], args['node'][1], args['stype'], args['mat'], args['sect'], args['angle'], '', args['id'], tens, t_limit, non_len)
     elif elem_type == 'SOLID':
-        Element.Solid(nodes=args['node'][:nNodes], mat=args['mat'], sect=args['sect'],group='', id=args['id'])
+        Element.Solid(nodes=args['node'][:nNodes], mat=args['mat'],group='', id=args['id'])
 
 
 class _helperELEM:
@@ -462,6 +462,18 @@ class Element():
     
     lastLoc = (0,0,0) #Last Location created using Beam element
     '''Last Node Location created by Beam / Truss element - (x,y,z)'''
+
+    @staticmethod
+    def _deleteElem(eID):
+        if str(eID) in Element.__elemDIC__:
+            eObj = elemByID(eID)
+            cell_loc = _cell(eObj.CENTER)
+            Element.elements.remove(eObj)
+            Element.ids.remove(eID)
+            Element.__elemDIC__.pop(str(eID))
+            Element.Grid[cell_loc].remove(eObj)
+            
+            
 
     @classmethod
     def json(cls):
@@ -990,6 +1002,15 @@ class Element():
                 _n3 = nodeByID(uniq_nodes[2])
                 self.CENTER = np.average([_n1.LOC,_n2.LOC,_n3.LOC],0)
                 self.AREA,self.NORMAL = _triangleAREA(_n1,_n2,_n3)
+
+                # NEW CODE FOR LOCAL AXIS OF PLATES
+                self.LOCALZ = np.round(self.NORMAL,4)
+
+                _dirVect = np.subtract(_n2.LOC,_n1.LOC)
+                _LOCALX = _dirVect/(np.linalg.norm(_dirVect))
+                self.LOCALX = np.round(_rotatePT(_LOCALX,self.LOCALZ,angle),4)
+                self.LOCALY = np.round(np.cross(self.LOCALZ , self.LOCALX),4)
+
             elif len(uniq_nodes)==4:
                 self.NODE = nodes
                 _n1 = nodeByID(uniq_nodes[0])
@@ -999,8 +1020,17 @@ class Element():
                 a1 , n1 = _triangleAREA(_n1,_n2,_n3)
                 a2 , n2 = _triangleAREA(_n3,_n4,_n1)
                 self.AREA = a1+a2
-                self.NORMAL = (n1+n2)/np.linalg.norm((n1+n2+0.000001))
+                self.NORMAL = np.round((n1+n2)/np.linalg.norm((n1+n2+0.000001)),4)
                 self.CENTER = np.average([_n1.LOC,_n2.LOC,_n3.LOC,_n4.LOC],0)
+
+                # NEW CODE FOR LOCAL AXIS OF PLATES
+                self.LOCALZ = self.NORMAL
+
+                _dirVect1 = np.subtract(_n2.LOC,_n1.LOC)
+                _dirVect2 = np.subtract(_n3.LOC,_n4.LOC)
+                _LOCALX = np.round((_dirVect1+_dirVect2)/np.linalg.norm((_dirVect1+_dirVect2)),4)
+                self.LOCALX = np.round(_rotatePT(_LOCALX,self.LOCALZ,angle),4)
+                self.LOCALY = np.round(np.cross(self.LOCALZ , self.LOCALX),4)
                 
 
 
@@ -1012,7 +1042,7 @@ class Element():
             id_new = None
             bHole = False
             import gmsh
-            gmsh.initialize()
+            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
             gmsh.option.setNumber("General.Terminal", 0)
 
             surface_Main = _createSurface(points,meshSize,1)
@@ -1131,27 +1161,67 @@ class Element():
             return plate_obj
         
         @staticmethod
-        def extrude(points: list,dir:list,nDiv:int=1,bClose:bool=False,inpType:_extrudeInp='XYZ', stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
+        def extrude(inpType:_extrudeInp,input: list,dir:list,nDiv:int=1,bClose:bool=False, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
                 # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
             """
             Enter node id list to extrude along a vector
             inpType ->  'XYZ' -> points = ((x,y,z),(x,y,z))
-                        'ID' -> points = (1,2,3,..) Node IDs
-                        'NODE' -> points = (Node objects,...)
+                        'NODE_ID' -> points = (1,2,3,..) Node IDs
             """
             nDiv = int(nDiv)
-            id_new = None
             nID_A = []
             nID_B = []
 
+            def _createPlateExtrude(nID_A,nID_B,nDiv,id):
+                max_len = len(nID_B)
+                id_new = None
+                plate_obj = []
+                if nDiv == 1 :
+                    for i in range(max_len-1):
+                        if id != None : id_new = id+i
+                        pt_array = [nID_A[i],nID_B[i],nID_B[i+1],nID_A[i+1]]
+                        plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
+                if nDiv > 1 :
+                    nID_dic = {}
+                    for j in range(nDiv+1):
+                        nID_dic[j] = []
+                    nID_dic[0] = nID_A
+                    nID_dic[nDiv] = nID_B
+                    for i in range(max_len):
+                        loc0= nodeByID(nID_A[i]).LOC
+                        loc1 = nodeByID(nID_B[i]).LOC
+                        int_points = np.linspace(loc0,loc1,nDiv+1)
+
+                        for j in range(nDiv-1):
+                            nID_dic[j+1].append(Node(int_points[j+1][0],int_points[j+1][1],int_points[j+1][2]).ID)
+                    j=0
+                    for q in range(nDiv):
+                        for i in range(max_len-1):
+                            if id != None : id_new = id+j
+                            pt_array = [nID_dic[q][i],nID_dic[q+1][i],nID_dic[q+1][i+1],nID_dic[q][i+1]]
+                            plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
+                            j+=1
+
+                return plate_obj
+
+
             if inpType == 'XYZ':
+                points = input
 
                 f_pt = np.add(points,dir)
 
                 for i,pt in enumerate(points):
                     nID_A.append(Node(pt[0],pt[1],pt[2]).ID)
                     nID_B.append(Node(f_pt[i][0],f_pt[i][1],f_pt[i][2]).ID)
-            if inpType == 'ID':
+
+                if bClose:
+                    nID_A.append(nID_A[0])
+                    nID_B.append(nID_B[0])
+
+                return _createPlateExtrude(nID_A,nID_B,nDiv,id)
+
+            elif inpType == 'NODE_ID':
+                points = input
                 nID_A = list(points)
                 pts_loc = [nodeByID(pt).LOC for pt in points]
 
@@ -1160,50 +1230,90 @@ class Element():
                 for i in range(len(points)):
                     nID_B.append(Node(f_pt[i][0],f_pt[i][1],f_pt[i][2]).ID)
 
-            if inpType == 'NODE':
-                nID_A = [pt.ID for pt in points]
-                pts_loc = [pt.LOC for pt in points]
+                if bClose:
+                    nID_A.append(nID_A[0])
+                    nID_B.append(nID_B[0])
 
-                f_pt = np.add(pts_loc,dir)
+                return _createPlateExtrude(nID_A,nID_B,nDiv,id)
+            
+            
+            # if inpType in ('NODE_ID','XYZ'):
+            #     return _createPlateExtrude(nID_A,nID_B,nDiv,id)
+            
+        @staticmethod
+        def extrudeLine(elmIDs: list,dir:list,nDiv:int=1,bDeleteLine:bool=False, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
+                # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
+            """
+            """
+            nDiv = int(nDiv)
+            nID_A = []
+            nID_B = []
 
-                for i in range(len(points)):
-                    nID_B.append(Node(f_pt[i][0],f_pt[i][1],f_pt[i][2]).ID)
-                
-
-            if bClose:
-                nID_A.append(nID_A[0])
-                nID_B.append(nID_B[0])
-
-            max_len = len(nID_B)
-
-            plate_obj = []
-            if nDiv == 1 :
-                for i in range(max_len-1):
-                    if id != None : id_new = id+i
-                    pt_array = [nID_A[i],nID_B[i],nID_B[i+1],nID_A[i+1]]
-                    plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
-            if nDiv > 1 :
-                nID_dic = {}
-                for j in range(nDiv+1):
-                    nID_dic[j] = []
-                nID_dic[0] = nID_A
-                nID_dic[nDiv] = nID_B
-                for i in range(max_len):
-                    loc0= nodeByID(nID_A[i]).LOC
-                    loc1 = nodeByID(nID_B[i]).LOC
-                    int_points = np.linspace(loc0,loc1,nDiv+1)
-
-                    for j in range(nDiv-1):
-                        nID_dic[j+1].append(Node(int_points[j+1][0],int_points[j+1][1],int_points[j+1][2]).ID)
-                j=0
-                for q in range(nDiv):
+            def _createPlateExtrude(nID_A,nID_B,nDiv,id):
+                max_len = len(nID_B)
+                id_new = None
+                plate_obj = []
+                if nDiv == 1 :
                     for i in range(max_len-1):
-                        if id != None : id_new = id+j
-                        pt_array = [nID_dic[q][i],nID_dic[q+1][i],nID_dic[q+1][i+1],nID_dic[q][i+1]]
-                        plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id))
-                        j+=1
+                        if id != None : id_new = id+i
+                        pt_array = [nID_A[i],nID_B[i],nID_B[i+1],nID_A[i+1]]
+                        plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
+                if nDiv > 1 :
+                    nID_dic = {}
+                    for j in range(nDiv+1):
+                        nID_dic[j] = []
+                    nID_dic[0] = nID_A
+                    nID_dic[nDiv] = nID_B
+                    for i in range(max_len):
+                        loc0= nodeByID(nID_A[i]).LOC
+                        loc1 = nodeByID(nID_B[i]).LOC
+                        int_points = np.linspace(loc0,loc1,nDiv+1)
 
-            return plate_obj
+                        for j in range(nDiv-1):
+                            nID_dic[j+1].append(Node(int_points[j+1][0],int_points[j+1][1],int_points[j+1][2]).ID)
+                    j=0
+                    for q in range(nDiv):
+                        for i in range(max_len-1):
+                            if id != None : id_new = id+j
+                            pt_array = [nID_dic[q][i],nID_dic[q+1][i],nID_dic[q+1][i+1],nID_dic[q][i+1]]
+                            plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
+                            j+=1
+
+                return plate_obj
+
+            finalPlateObj = []
+            for eID in elmIDs:
+                nID_A = []
+                nID_B = []
+                eObj = elemByID(eID)
+                if eObj.TYPE in ('BEAM','TRUSS','TENSTR','COMPTR'):
+                    nID_A = eObj.NODE[:2]
+                
+                    pts_loc = [nodeByID(nID).LOC for nID in nID_A]
+
+
+                    f_pt = np.add(pts_loc,dir)
+
+                    for i in range(len(nID_A)):
+                        nID_B.append(Node(f_pt[i][0],f_pt[i][1],f_pt[i][2]).ID)
+
+                    finalPlateObj+=_createPlateExtrude(nID_A,nID_B,nDiv,id)
+                    if id!=None: id+=nDiv
+
+            if bDeleteLine:
+                for eID in elmIDs:
+                    Element._deleteElem(eID)
+                # return finalPlateObj
+
+
+            
+
+
+
+            
+            
+            # if inpType in ('NODE_ID','XYZ'):
+            #     return _createPlateExtrude(nID_A,nID_B,nDiv,id)
             
 
         # @staticmethod
@@ -1230,9 +1340,6 @@ class Element():
         # def __meshShapes():
         #     for shape in _quadShape.shapes:
         #         shape.mesh()
-
-
-
 
     class Tension(_common):
      def __init__(self, i: int, j: int, stype: int, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None, non_len: float = None, cable_type: int = None, tens: float = None, t_limit: float = None):
@@ -1383,7 +1490,7 @@ class Element():
             _ADD(self)
 
     class Solid(_common):
-        def __init__(self, nodes: list, mat: int = 1, sect: int = 0, group = "" , id: int = None):
+        def __init__(self, nodes: list, mat: int = 1, group = "" , id: int = None):
             """
             Creates a SOLID element for 3D analysis.
             
@@ -1414,14 +1521,164 @@ class Element():
             self.ID = id
             self.TYPE = 'SOLID'
             self.MATL = mat
-            self.SECT = sect # Solid elements don't use section properties
-            self.NODE = nodes
-
-            _nodesLoc = [nodeByID(nId).LOC for nId in nodes]
+            self.SECT = 0 # Solid elements don't use section properties
+            _nodesObj = [nodeByID(nId) for nId in nodes]
+            _nodesLoc = [node.LOC for node in _nodesObj]
             self.CENTER = np.average(_nodesLoc,0)
+
+            z_Base = np.cross(np.subtract(_nodesObj[1].LOC,_nodesObj[0].LOC),np.subtract(_nodesObj[2].LOC,_nodesObj[1].LOC))
+
+            if len(nodes) == 4:
+                # TETRAHEDRAL
+                pointTop = np.subtract(_nodesObj[3].LOC,self.CENTER)
+                dotP = np.dot(pointTop,z_Base)
+                if dotP < 0:
+                    # Incorrect direction
+                    nodes[:3] = nodes[:3][::-1]
+            elif len(nodes) == 6:
+                # PRISM
+                pointTop = np.subtract(_nodesObj[3].LOC,self.CENTER)
+                dotP = np.dot(pointTop,z_Base)
+                if dotP < 0:
+                    # Incorrect direction
+                    nodes = nodes[3:] + nodes[:3]
+            elif len(nodes) == 8:
+                # HEXA
+                pointTop = np.subtract(_nodesObj[4].LOC,self.CENTER)
+                dotP = np.dot(pointTop,z_Base)
+                if dotP < 0:
+                    # Incorrect direction
+                    nodes = nodes[4:] + nodes[:4]
+
+            self.NODE = nodes
+            
 
             self._GROUP = group
             _ADD(self)
+
+        @staticmethod
+        def extrudeFromPlates(elmIDs,dir=[0,0,1],nDiv = 1, mat=1, group="", id=None, bDeletePlate=False):
+            extrusion = [dir[0]/nDiv , dir[1]/nDiv , dir[2]/nDiv]
+            id_new = None
+            if id!=None: id_new = id-1
+
+            plateElmIDs= [id for id in elmIDs if elemByID(id).TYPE in ['PLATE','WALL']]
+            nPlates = len(plateElmIDs)
+
+                    
+
+            for i,eID in enumerate(plateElmIDs):
+                eObj = elemByID(eID)
+                nID_A = eObj.NODE
+
+                for q in range(nDiv):
+                    if id != None : id_new = id_new+1
+                    nLOC_A = [nodeByID(pt).LOC for pt in nID_A]
+
+                    nLOC_B = np.add(nLOC_A,extrusion)
+                    nID_B = [Node(nLOC_B[i][0],nLOC_B[i][1],nLOC_B[i][2]).ID for i in range(len(nID_A))]
+
+                    _fNIDs = nID_A+nID_B
+                    Element.Solid(_fNIDs,mat,group,id_new)
+
+                    nID_A = nID_B
+            
+            if bDeletePlate:
+                for eID in plateElmIDs:
+                    Element._deleteElem(eID)
+
+        @staticmethod
+        def fromPoints(facePts:list,meshSize:float=None,mat:int=1,group='',id:int=None):
+            import gmsh
+            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
+            # gmsh.initialize()
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.model.add("loft")
+
+            id_new = None
+            if meshSize == None: 
+                meshSize = 0
+            else:
+                gmsh.option.setNumber("Mesh.MeshSizeMin", meshSize)
+                gmsh.option.setNumber("Mesh.MeshSizeMax", meshSize)
+
+            MESH_SIZE = float(meshSize)
+
+            def make_wire(points):
+                p_tags = [gmsh.model.occ.addPoint(*p,MESH_SIZE) for p in points]
+
+                lines = []
+                n = len(p_tags)
+                for i in range(n):
+                    lines.append(
+                        gmsh.model.occ.addLine(
+                            p_tags[i],
+                            p_tags[(i + 1) % n]
+                        )
+                    )
+
+                return gmsh.model.occ.addWire(lines)
+
+            facePTs_wire = []
+            for pts in facePts:
+                facePTs_wire.append(make_wire(pts))
+
+            # Create solid loft
+            volumes = gmsh.model.occ.addThruSections(
+                facePTs_wire,
+                makeSolid=True,
+                makeRuled=True
+            )
+
+            gmsh.model.occ.synchronize()
+            gmsh.model.mesh.generate(3)
+            
+
+            _, node_coords, _ = gmsh.model.mesh.getNodes()
+            nodes = np.array(node_coords).reshape(-1, 3)  # (N, 3) array
+            _, _, elemNodeTags = gmsh.model.mesh.getElements(3)
+            gmsh.finalize()
+
+            elemNODE = np.array(elemNodeTags).reshape(-1, 4) 
+            nID_list = []
+            for nd in nodes:
+                nID_list.append(Node(nd[0],nd[1],nd[2]).ID)
+
+
+            solid_obj = []
+            for i,elmNd in enumerate(elemNODE):
+                if id!=None: id_new=id+i
+                solid_obj.append(Element.Solid([nID_list[int(x)-1] for x in elmNd],mat,group,id_new))
+
+            
+
+            return solid_obj
+
+        @staticmethod
+        def fromMSHfile(fileLoc:str,mat:int=1,group='',id:int=None):
+            import gmsh
+            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.open(fileLoc)
+
+            id_new = None
+
+            _, node_coords, _ = gmsh.model.mesh.getNodes()
+            nodes = np.array(node_coords).reshape(-1, 3)  # (N, 3) array
+            _, _, elemNodeTags = gmsh.model.mesh.getElements(3) # ONLY SOLID
+            gmsh.finalize()
+
+            elemNODE = np.array(elemNodeTags).reshape(-1, 4) 
+            nID_list = []
+            for nd in nodes:
+                nID_list.append(Node(nd[0],nd[1],nd[2]).ID)
+
+            solid_obj = []
+            for i,elmNd in enumerate(elemNODE):
+                if id!=None: id_new=id+i
+                solid_obj.append(Element.Solid([nID_list[int(x)-1] for x in elmNd],mat,group,id_new))
+
+            return solid_obj
 
 # class _quadShape():
 #     shapes = []

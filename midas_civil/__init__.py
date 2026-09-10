@@ -1,7 +1,7 @@
 import requests
 from colorama import Fore,Style
 from ._mapi import NX,MidasAPI,MAPI_KEY,MAPI_BASEURL,MAPI_COUNTRY,Midas_help
-_version_ = "1.6.3"
+_version_ = "1.7.1"
 
 
 print('\n╭────────────────────────────────────────────────────────────────────────────────────╮')
@@ -19,7 +19,7 @@ if NX.version_check:
                 print('╰────────────────────────────────────────────────────────────────────────────────────╯\n'+Style.RESET_ALL)
     except:
          pass
-
+    
 from ._model import Model
 from ._boundary import Boundary
 from ._utils import getID,getNodeID,utils,getLOC
@@ -31,9 +31,9 @@ from ._load import Load,Load_Case   # Revise it
 from ._loadcomb import LoadCombination
 
 
-from ._material import Material,CompStrength,CreepShrinkage,TDMatLink
+from ._material import Material,CompStrength,CreepShrinkage,TDMatLink,ChangeProperty
 
-from ._section import Section,Offset
+from ._section import Section,Offset,Shape
 
 from ._construction import CS
 from ._thickness import Thickness
@@ -50,5 +50,9 @@ from ._BoundaryChangeAssignment import BoundaryChangeAssignment         # <=== N
 from ._result_table import Result,TableOptions
 
 
-# from ._responseSpectrum import ResponseSpectrum
-
+from ._responseSpectrum import RS
+from ._heat_of_hydration import HoH
+from ._timehistory import TH
+from ._story import Story
+    
+# from ._visualise import Snap

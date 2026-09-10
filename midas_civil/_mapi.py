@@ -215,11 +215,15 @@ class NX:
     debug_response = False
     debug_log_path = None   # When set, raw HTTP responses are written here instead of the terminal
     onlyNode = False
-    visualiser = False
+    visualiser = True
     modelIDs = {} # Handles the fast MAX ID
     autoTaperGroup = False
     dispWarning = True
     PRODUCT = 'CIVIL'
+    SOLVER = 'FES'
+    _MEC_VERSIONS = ['9.7.5']
+    _isSyncUnit = False
+    save_debug_log = False
 
     units = {
         "FORCE": "KN",
@@ -398,8 +402,13 @@ def MidasAPI(method:_httpMethod, command:str, body:dict={})->dict:
 
     if MAPI_KEY.count == 1:
         MAPI_KEY.count =0
+
         if NX.user_print:
             _checkUSER()
+
+        if NX.save_debug_log:
+            sys.stdout = open("midas_civil_debug_log.txt", "w", encoding="utf-8")
+
 
 
 
@@ -482,12 +491,17 @@ def _setUNIT(unitJS):
 def _checkUSER():
     response =  MidasAPI('GET','/config/ver',{})
     if 'VER' in response:
-        resp = response['VER']
+        resp:dict = response['VER']
         _product = resp['NAME']
         if 'CIVIL' in _product:
             NX.PRODUCT = 'CIVIL'
         elif 'GEN' in _product:
             NX.PRODUCT = 'GEN'
+        
+        _version = resp.get('VERSION','9.6.0')
+        if _version in NX._MEC_VERSIONS:
+            NX.SOLVER == 'MEC'
+ 
 
         # print(f"{' '*15}Connected to {resp['NAME']}")
         # print(f"{' '*15}USER : {resp['USER']}          COMPANY : {resp['COMPANY']}")

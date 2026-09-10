@@ -4,6 +4,9 @@ from __future__ import annotations
 from math import hypot,sqrt
 import numpy as np
 from typing import Literal
+from ._mapi import NX,MidasAPI
+
+_falloffType = Literal['Linear','Parabolic','Smooth']
 
 #Function to remove duplicate set of values from 2 lists
 # def unique_lists(li1, li2):
@@ -125,6 +128,7 @@ def _longestList(A,B):
     return (A + [A[-1]] * (nB - nA),B)
 
 
+
 _alignType = Literal['cubic','akima','makima','pchip']
 _interpXZ = Literal['linear','quadratic','cubic']
 
@@ -135,7 +139,7 @@ class utils:
         '''Defines alignment object passing through the points
         X -> monotonous increasing'''
         
-        def __init__(self,points,type: _alignType = 'cubic',xz_interp:_interpXZ = 'linear'):
+        def __init__(self,points,type: _alignType = 'cubic',xz_interp:_interpXZ = 'linear',yEcc=0):
             ''' 
             **POINTS** -> Points on the alignment [[x,y] , [x,y] , [x,y] ....]   
                           Points on the alignment [[x,y,z] , [x,y,z] , [x,y,z] ....]   
@@ -144,6 +148,12 @@ class utils:
             **XZ Interpolation** -> Type of interpolating curve in X,Z
                     linear , slinear , cubic
             '''
+
+            if yEcc!=0:
+                from ._element import _pointOffset
+                points = _pointOffset(points,yEcc,0,0)
+
+
             from scipy.interpolate import CubicSpline , Akima1DInterpolator , PchipInterpolator, interp1d
             _b3D = False
 
@@ -156,6 +166,11 @@ class utils:
             except:
                 _b3D = False
                 _pt_z = [0 for pt in points]
+
+
+           
+
+
 
 
 
@@ -216,9 +231,17 @@ class utils:
             self.U_FINE = _u_fine
 
         def getPoint(self,distance):
-            x_interp = np.interp(distance,self.CUMLENGTH,self.X_FINE)
-            y_interp = np.interp(distance,self.CUMLENGTH,self.Y_FINE)
-            return x_interp , y_interp
+            # x_interp = np.interp(distance,self.CUMLENGTH,self.X_FINE)
+            # y_interp = np.interp(distance,self.CUMLENGTH,self.Y_FINE)
+            # z_interp = np.interp(distance,self.CUMLENGTH,self.Z_FINE)
+
+            from scipy.interpolate import interp1d
+            x_interp = interp1d(self.CUMLENGTH,self.X_FINE,fill_value='extrapolate')(distance)
+            y_interp = interp1d(self.CUMLENGTH,self.Y_FINE,fill_value='extrapolate')(distance)
+            z_interp = interp1d(self.CUMLENGTH,self.Z_FINE,fill_value='extrapolate')(distance)
+
+
+            return x_interp , y_interp , z_interp
         
         def getSlope(self,distance):
             'Returns theta in radians (-pi/2  to pi/2)'
@@ -286,7 +309,9 @@ class utils:
             :param bElement: If beta angle of element should be modified
             :type bElement: bool
             '''
-            from midas_civil import Node,Element,MidasAPI,nodeByID
+            from ._node import Node,MidasAPI,nodeByID
+            from ._element import Element
+
             if bSync:
                 Node.sync()
                 if bElement: Element.sync()
@@ -453,7 +478,11 @@ class utils:
         mat_E : float, optional
             Modulus of elasticity of the material (default is 30,000,000).
         """
-        from midas_civil import Model,Material,Section,Offset,nodesInGroup,Element,Boundary,Load,elemsInGroup,Node,Group
+        from ._model import Model,Material,Section,Element,Boundary,Load,Group
+        from ._node import Node,nodesInGroup
+        from ._section import Offset
+        from ._element import elemsInGroup
+
         import math
 
         Model.units()
@@ -565,3 +594,40 @@ class utils:
         utils.__RC_Grillage_nSpan+=1
         #---------------------------------------------------------------------------------------
         # Model.create()
+
+    @staticmethod
+    def SoftSelection(location=(0,0,0),radius:float=5,falloffType:_falloffType='Linear',):
+        from ._node import Node,nodesInRadius
+        # LINEAR MAPPING --------------------------
+        def _linearWeight(dist,Radius):
+            return round(1-dist/Radius,3)
+
+        def _quadWeight(dist,Radius):
+            return round(1-(dist/Radius)**2,3)
+
+        def _smoothWeight(dist,Radius):
+            return round((1-(3*((dist/Radius)**2)-2*((abs(dist/Radius))**3))),3)
+        
+        if falloffType == 'Parabolic': falloffFn = _quadWeight
+        elif falloffType == 'Smooth': falloffFn = _smoothWeight
+        else: falloffFn = _linearWeight
+
+        #-------------------------------------------
+        _selectRadius = radius
+        _softSelect_data = {}
+
+        if not isinstance(location[0],(tuple,list,set)): location = [location]
+
+        for nID in location:
+            nodeData = nodesInRadius(nID,radius=_selectRadius,bDistOutput=True,includeSelf=True)
+            for nID,dist in nodeData:
+                if nID in _softSelect_data:
+                    _softSelect_data[nID] = min(_softSelect_data[nID],dist)
+                else:
+                    _softSelect_data[nID] = dist
+
+        for nID,dist in _softSelect_data.items():
+            _softSelect_data[nID] = falloffFn(dist,_selectRadius)
+
+        return list(_softSelect_data.items())
+
